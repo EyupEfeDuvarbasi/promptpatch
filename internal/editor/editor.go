@@ -42,11 +42,11 @@ func choose(prompt string, result score.Result, actions ...string) bool {
 		for {
 			clear()
 			printPrompt("Prompt", prompt)
-			fmt.Printf("\nPuan: %d/100\n", result.Score)
+			screenf("\nPuan: %d/100\n", result.Score)
 			for _, criterion := range result.Criteria {
-				fmt.Printf("  %-26s %d/100\n", criterion.Name+":", criterion.Score)
+				screenf("  %-26s %d/100\n", criterion.Name+":", criterion.Score)
 			}
-			fmt.Println("\n↑/↓ ile seç, Enter ile onayla, Esc ile çık.")
+			screenln("\n↑/↓ ile seç, Enter ile onayla, Esc ile çık.")
 			printActions(actions, selected)
 			switch readKey() {
 			case "up":
@@ -68,9 +68,9 @@ func chooseComparison(original string, originalScore score.Result, improved stri
 		for {
 			clear()
 			printPrompt(fmt.Sprintf("Özgün prompt — %d/100", originalScore.Score), original)
-			fmt.Println()
+			screenln()
 			printPrompt(fmt.Sprintf("İyileştirilmiş prompt — %d/100", improvedScore.Score), improved)
-			fmt.Println("\n↑/↓ ile seç, Enter ile onayla, Esc ile özgünü koru.")
+			screenln("\n↑/↓ ile seç, Enter ile onayla, Esc ile özgünü koru.")
 			printActions([]string{"İyileştirilmiş promptu uygula", "Özgün promptu koru"}, selected)
 			switch readKey() {
 			case "up", "down":
@@ -109,29 +109,49 @@ func raw(run func() bool) bool {
 }
 
 func readKey() string {
-	var input [3]byte
-	if n, _ := os.Stdin.Read(input[:1]); n == 0 {
+	first, ok := readByte()
+	if !ok {
 		return "esc"
 	}
-	if input[0] == '\r' || input[0] == '\n' {
+	if first == '\r' || first == '\n' {
 		return "enter"
 	}
-	if input[0] != 27 {
+	if first != 27 {
 		return ""
 	}
-	if n, _ := os.Stdin.Read(input[1:3]); n != 2 {
+	second, ok := readByte()
+	if !ok || (second != '[' && second != 'O') {
 		return "esc"
 	}
-	if input[2] == 'A' {
+	third, ok := readByte()
+	if !ok {
+		return "esc"
+	}
+	if third == 'A' {
 		return "up"
 	}
-	if input[2] == 'B' {
+	if third == 'B' {
 		return "down"
 	}
 	return "esc"
 }
 
+func readByte() (byte, bool) {
+	var input [1]byte
+	n, err := os.Stdin.Read(input[:])
+	return input[0], err == nil && n == 1
+}
+
 func clear() { fmt.Print("\033[2J\033[H") }
+
+// screenf preserves line starts while the terminal is in raw input mode.
+func screenf(format string, values ...any) {
+	fmt.Print(screenText(fmt.Sprintf(format, values...)))
+}
+
+func screenln(values ...any) { screenf("%s\n", fmt.Sprint(values...)) }
+
+func screenText(value string) string { return strings.ReplaceAll(value, "\n", "\r\n") }
 
 func printActions(actions []string, selected int) {
 	for i, action := range actions {
@@ -139,14 +159,14 @@ func printActions(actions []string, selected int) {
 		if i == selected {
 			prefix = "❯ "
 		}
-		fmt.Println(prefix + action)
+		screenln(prefix + action)
 	}
 }
 
 func printPrompt(title, value string) {
-	fmt.Println(title + ":")
+	screenln(title + ":")
 	for _, line := range wrap(value, width()-2) {
-		fmt.Println("  " + line)
+		screenln("  " + line)
 	}
 }
 

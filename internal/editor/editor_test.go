@@ -25,3 +25,9 @@ func TestWrapperPassesEditorFile(t *testing.T) {
 		t.Fatalf("script=%q", got)
 	}
 }
+
+func TestScreenLinesUseCarriageReturn(t *testing.T) {
+	if got := screenText("a\nb"); got != "a\r\nb" {
+		t.Fatalf("line ending=%q", got)
+	}
+}
