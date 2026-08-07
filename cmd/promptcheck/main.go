@@ -7,30 +7,19 @@ import (
 
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/cli"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/config"
-	"github.com/EyupEfeDuvarbasi/promptpatch/internal/gui"
-	"github.com/EyupEfeDuvarbasi/promptpatch/internal/hotkey"
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/editor"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/llm"
 )
 
 func main() {
-	if len(os.Args) == 2 && os.Args[1] == "setup-shell" {
-		if err := cli.SetupShell(); err != nil {
+	if len(os.Args) == 2 && os.Args[1] == "setup-codex" {
+		if err := editor.SetupCodex(); err != nil {
 			fail(err)
 		}
 		return
 	}
-	if len(os.Args) == 2 && os.Args[1] == "gui" {
-		gui.Run()
-		return
-	}
-	if len(os.Args) == 2 && os.Args[1] == "hotkey" {
-		if err := hotkey.Run(); err != nil {
-			fail(err)
-		}
-		return
-	}
-	if len(os.Args) == 2 && os.Args[1] == "install-hotkey" {
-		if err := hotkey.Install(); err != nil {
+	if len(os.Args) == 3 && os.Args[1] == "edit" {
+		if err := editor.Run(os.Args[2]); err != nil {
 			fail(err)
 		}
 		return

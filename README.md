@@ -10,29 +10,25 @@ go install github.com/EyupEfeDuvarbasi/promptpatch/cmd/promptcheck@main
 
 Alternatif olarak GitHub Releases sayfasından platformunuza uygun binary'yi indirin ve PATH içindeki bir dizine koyun.
 
-## Kullanım
+## Codex'te `Ctrl-G`
+
+Codex CLI, `Ctrl-G` ile o an yazdığınız promptu editöre aktarır. Bir kez aşağıdaki kurulumu yapın ve **yeni bir terminalde Codex'i normal şekilde açın**:
+
+```sh
+promptcheck setup-codex
+```
+
+`Ctrl-G` artık aynı terminalde PromptPatch ekranını açar. Taslak prompt otomatik gelir, ekran yatay kaydırma gerektirmeden satır kırar; `↑`/`↓` ve `Enter` ile iyileştirilmiş veya özgün sürümü seçersiniz. Kaydedilen metin Codex'in yazım alanına geri döner.
+
+Bu ayar yalnızca `codex` komutunu saran bir shell fonksiyonu ekler; başka programların editör tercihini değiştirmez.
+
+## Komut satırında kullanım
 
 ```sh
 promptcheck "src/parser.go içindeki parseInput fonksiyonunu boş girdi için düzelt"
 echo "şunu düzelt" | promptcheck
 promptcheck --detail "prompt metni"
 ```
-
-Shell kısayolunu bir kez kurun:
-
-```sh
-promptcheck setup-shell
-```
-
-Yeni terminal açtıktan sonra shell komut satırındaki prompt metnini `Ctrl-G` ile değerlendirebilirsiniz. Kısayol zsh ve bash içindir.
-
-KDE/Wayland'da Codex açıkken de çalışan GUI kısayolu için bir kez:
-
-```sh
-promptcheck install-hotkey
-```
-
-Portal izin penceresinde `Ctrl-G` kısayolunu onaylayın. Sonrasında `Ctrl-G`, Promptcheck penceresini açar.
 
 ## İsteğe bağlı LLM modu
 

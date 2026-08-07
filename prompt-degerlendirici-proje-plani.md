@@ -86,7 +86,7 @@ Kullanıcı `--model` ile özellikle etkinleştirirse, kural tabanlı katmanın 
 ### 4.3 Nihai Puan
 Her kriter 0-100 arası puanlanır; beş kriterin aritmetik ortalaması promptun puanıdır. Local modda yalnızca kural tabanlı puan kullanılır. LLM isteğe bağlı olarak etkinleştirilirse, her kriterde %40 kural tabanlı ve %60 LLM puanı birleştirilir.
 
-### 4.4 Puanlama Kriterleri (MVP seti — 5 kriter, her biri 1-10 arası puanlanır)
+### 4.4 Puanlama Kriterleri (MVP seti — 5 kriter, her biri 0-100 arası puanlanır)
 1. **Netlik** — İstek açık ve tek anlamlı mı?
 2. **Spesifiklik** — Somut detaylar (dosya, fonksiyon, teknoloji) var mı?
 3. **Bağlam Yeterliliği** — Modelin ihtiyaç duyacağı arka plan bilgisi verilmiş mi?
@@ -122,9 +122,9 @@ echo "<prompt metni>" | promptcheck
 
 ### 5.3 Tetikleme (Kısayol)
 
-**MVP Kararı: Shell-binding (global OS hotkey DEĞİL).**
+**MVP Kararı: Shell-binding veya host CLI'nin standart editör akışı (global OS hotkey DEĞİL).**
 
-Kurulum sırasında kullanıcının `.bashrc`/`.zshrc` dosyasına eklenen bir shell fonksiyonu/keybinding aracılığıyla çalışır (ör. terminalde bir tuş kombinasyonuna basınca o anki komut satırındaki metni yakalayıp `promptcheck`'e gönderir). Global, arka planda çalışan bir OS-seviye daemon **MVP kapsamında yoktur** — bu, kurulum karmaşıklığını ve platformlar arası (Linux/macOS/Windows) farklı API gereksinimlerini MVP'den çıkarmak için bilinçli bir sınırlamadır.
+Kurulum sırasında kullanıcının `.bashrc`/`.zshrc` dosyasına eklenen bir shell fonksiyonu/keybinding aracılığıyla çalışabilir. Host CLI standart `EDITOR`/`VISUAL` akışını destekliyorsa PromptPatch bu editör olarak da çalışır: host'un verdiği mevcut taslak metni aynı terminalde analiz eder, en fazla iki soru sorar ve kullanıcının seçtiği sürümü aynı dosyaya geri yazar. Örneğin Codex CLI'nin `Ctrl-G` prompt editörü bu akışı kullanır. Global, arka planda çalışan bir OS-seviye daemon **MVP kapsamında yoktur** — bu, kurulum karmaşıklığını ve platformlar arası (Linux/macOS/Windows) farklı API gereksinimlerini MVP'den çıkarmak için bilinçli bir sınırlamadır.
 
 ### 5.4 Örnek Çıktı (Kısa Mod)
 

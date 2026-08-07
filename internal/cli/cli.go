@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -40,7 +39,7 @@ func Run(ctx context.Context, args []string, in io.Reader, out io.Writer, client
 	}
 
 	originalRules := score.Evaluate(prompt)
-	improvedPrompt := LocalImprove(prompt)
+	improvedPrompt := LocalImprove(prompt, nil, nil)
 	original := originalRules
 	improved := score.Evaluate(improvedPrompt)
 	asked := false
@@ -76,7 +75,7 @@ func Run(ctx context.Context, args []string, in io.Reader, out io.Writer, client
 			return err
 		}
 		asked = true
-		improvedPrompt = LocalImprove(prompt + "\n\nEk bilgiler:\n" + answers)
+		improvedPrompt = LocalImprove(prompt, questions, strings.Split(answers, "\n"))
 		improved = score.Evaluate(improvedPrompt)
 	}
 	if *detail {
@@ -115,8 +114,19 @@ func LocalQuestions(result score.Result) []string {
 	return questions
 }
 
-func LocalImprove(prompt string) string {
-	return "Görev:\n" + prompt
+func LocalImprove(prompt string, questions, answers []string) string {
+	result := "Görev:\n" + strings.TrimSpace(prompt)
+	for i, answer := range answers {
+		answer = strings.TrimSpace(answer)
+		if answer == "" || i >= len(questions) {
+			continue
+		}
+		if !strings.Contains(result, "\nEk bağlam:\n") {
+			result += "\n\nEk bağlam:\n"
+		}
+		result += "- " + questions[i] + " " + answer + "\n"
+	}
+	return strings.TrimSpace(result)
 }
 
 func readPrompt(args []string, in io.Reader) (string, error) {
@@ -196,28 +206,4 @@ func copyToClipboard(text string) error {
 		return cmd.Run()
 	}
 	return errors.New("pano aracı bulunamadı: pbcopy, wl-copy, xclip veya xsel kurun")
-}
-
-func SetupShell() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	rc := home + "/.zshrc"
-	block := "\n# promptcheck shell binding\npromptcheck-widget() { promptcheck \"$BUFFER\"; zle reset-prompt }\nzle -N promptcheck-widget\nbindkey '^g' promptcheck-widget\n"
-	if strings.HasSuffix(os.Getenv("SHELL"), "bash") {
-		rc = home + "/.bashrc"
-		block = "\n# promptcheck shell binding\nbind -x '\"\\C-g\":promptcheck \"$READLINE_LINE\"'\n"
-	}
-	content, _ := os.ReadFile(rc)
-	if strings.Contains(string(content), "promptcheck shell binding") {
-		return nil
-	}
-	file, err := os.OpenFile(rc, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	_, err = file.WriteString(block)
-	return err
 }

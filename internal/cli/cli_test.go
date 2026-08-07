@@ -31,6 +31,13 @@ func TestLocalQuestionsAreLimited(t *testing.T) {
 	}
 }
 
+func TestLocalImproveLabelsOnlyProvidedAnswers(t *testing.T) {
+	got := LocalImprove("şunu düzelt", []string{"Hangi dosya?", "Beklenen sonuç?"}, []string{"src/parser.go", ""})
+	if !strings.Contains(got, "Ek bağlam:\n- Hangi dosya? src/parser.go") || strings.Contains(got, "Beklenen sonuç?") {
+		t.Fatalf("improved=%q", got)
+	}
+}
+
 func TestRunWorksWithoutAPIKey(t *testing.T) {
 	var output bytes.Buffer
 	err := Run(context.Background(), []string{"şunu düzelt"}, strings.NewReader("src/parser.go\nJSON hata açıklaması\n"), &output, nil)
