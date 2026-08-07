@@ -98,7 +98,7 @@ func readAnswer() (string, bool) {
 		default:
 			if key >= 32 {
 				answer = append(answer, key)
-				screenf("%s", string(key))
+				screenByte(key)
 			}
 		}
 	}
@@ -165,6 +165,8 @@ func screenf(format string, values ...any) {
 func screenln(values ...any) { screenf("%s\n", fmt.Sprint(values...)) }
 
 func screenText(value string) string { return strings.ReplaceAll(value, "\n", "\r\n") }
+
+func screenByte(value byte) { _, _ = os.Stdout.Write([]byte{value}) }
 
 func printActions(actions []string, selected int) {
 	for i, action := range actions {

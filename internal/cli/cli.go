@@ -115,18 +115,29 @@ func LocalQuestions(result score.Result) []string {
 }
 
 func LocalImprove(prompt string, questions, answers []string) string {
-	result := "Görev:\n" + strings.TrimSpace(prompt)
+	result := strings.TrimSpace(prompt)
 	for i, answer := range answers {
 		answer = strings.TrimSpace(answer)
 		if answer == "" || i >= len(questions) {
 			continue
 		}
-		if !strings.Contains(result, "\nEk bağlam:\n") {
-			result += "\n\nEk bağlam:\n"
+		if !strings.HasPrefix(result, "Görev:\n") {
+			result = "Görev:\n" + result
 		}
-		result += "- " + questions[i] + " " + answer + "\n"
+		result += "\n\n" + localSection(questions[i]) + ":\n- " + answer
 	}
 	return strings.TrimSpace(result)
+}
+
+func localSection(question string) string {
+	question = strings.ToLower(question)
+	if strings.Contains(question, "dosya") || strings.Contains(question, "fonksiyon") || strings.Contains(question, "teknoloji") {
+		return "Bağlam"
+	}
+	if strings.Contains(question, "davranış") || strings.Contains(question, "çıktı") || strings.Contains(question, "format") {
+		return "Beklenen sonuç"
+	}
+	return "Açıklama"
 }
 
 func readPrompt(args []string, in io.Reader) (string, error) {

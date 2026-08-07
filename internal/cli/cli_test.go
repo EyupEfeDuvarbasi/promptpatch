@@ -33,7 +33,13 @@ func TestLocalQuestionsAreLimited(t *testing.T) {
 
 func TestLocalImproveLabelsOnlyProvidedAnswers(t *testing.T) {
 	got := LocalImprove("şunu düzelt", []string{"Hangi dosya?", "Beklenen sonuç?"}, []string{"src/parser.go", ""})
-	if !strings.Contains(got, "Ek bağlam:\n- Hangi dosya? src/parser.go") || strings.Contains(got, "Beklenen sonuç?") {
+	if !strings.Contains(got, "Görev:\nşunu düzelt\n\nBağlam:\n- src/parser.go") || strings.Contains(got, "Hangi dosya?") {
+		t.Fatalf("improved=%q", got)
+	}
+}
+
+func TestLocalImproveDoesNotPretendToImproveCompletePrompt(t *testing.T) {
+	if got := LocalImprove("net prompt", nil, nil); got != "net prompt" {
 		t.Fatalf("improved=%q", got)
 	}
 }
