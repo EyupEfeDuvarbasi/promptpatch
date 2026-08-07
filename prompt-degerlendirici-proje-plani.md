@@ -69,7 +69,7 @@ Herhangi bir host AI CLI'nin (Claude Code, Copilot CLI, Codex CLI vb.) plugin si
 
 ## 4. Puanlama Sistemi
 
-**MVP Kararı: Local-first soru tespiti.** Kural tabanlı katman varsayılandır; gerçek anlamsal puanlama ve yeniden yazım kullanılabilir model erişimiyle yapılır.
+**MVP Kararı: Local-first.** Kural tabanlı katman varsayılandır; LLM katmanı isteğe bağlıdır.
 
 ### 4.1 Kural Tabanlı Katman (statik analiz, LLM çağrısı gerektirmez, anlık)
 Aşağıdaki heuristikleri kontrol eder ve her biri için ayrı bir alt-puan üretir:
@@ -78,7 +78,7 @@ Aşağıdaki heuristikleri kontrol eder ve her biri için ayrı bir alt-puan ür
 - **Bağlam eksikliği işaretleri:** Dosya adı, fonksiyon adı, teknoloji/dil belirtilmemişse işaretlenir.
 - **Format/çıktı belirtimi eksikliği:** Kullanıcı ne formatta çıktı istediğini belirtmemişse işaretlenir.
 
-Bu katman en fazla iki açıklayıcı soru seçer; anlamsal olarak yeniden yazılmış prompt üretiyormuş gibi davranmaz.
+Bu katman en fazla iki açıklayıcı soru seçer ve yanıtları “Amaç / Bağlam / Beklenen sonuç / Kabul kriterleri” bölümlerine derler; bilinmeyen teknik ayrıntıları uydurmaz.
 
 ### 4.2 LLM Tabanlı Katman (isteğe bağlı dinamik değerlendirme)
 Kullanıcı `--model` ile özellikle etkinleştirirse, kural tabanlı katmanın tespit edemeyeceği anlamsal kaliteyi değerlendirir:

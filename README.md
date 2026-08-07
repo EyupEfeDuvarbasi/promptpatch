@@ -1,6 +1,6 @@
 # promptpatch
 
-Terminalde AI kodlama promptlarındaki bilgi eksiklerini tespit eder; model erişimi olduğunda bunları gerçek puanlama ve iyileştirme için kullanır.
+Terminalde AI kodlama promptlarındaki bilgi eksiklerini tespit eder ve bunları yapılandırılmış geliştirici promptuna dönüştürür.
 
 ## Kurulum
 
@@ -18,7 +18,7 @@ Codex CLI, `Ctrl-G` ile o an yazdığınız promptu editöre aktarır. Bir kez a
 promptcheck setup-codex
 ```
 
-`Ctrl-G` artık aynı terminalde PromptPatch ekranını açar. Taslak prompt otomatik gelir, ekran yatay kaydırma gerektirmeden satır kırar; eksik bilgi varsa en fazla iki soru sorar. Model erişimi varsa yanıtları kullanarak gerçek iyileştirilmiş promptu ve iki puanı üretir; `↑`/`↓` ve `Enter` ile sürümü seçersiniz. Model erişimi yoksa özgün prompt korunur.
+`Ctrl-G` artık aynı terminalde PromptPatch ekranını açar. Taslak prompt otomatik gelir, ekran yatay kaydırma gerektirmeden satır kırar; eksik bilgi varsa en fazla iki soru sorar. Yanıtlar, “Amaç / Bağlam / Beklenen sonuç / Kabul kriterleri” bölümlerine derlenir; `↑`/`↓` ve `Enter` ile sürümü seçersiniz.
 
 Bu ayar yalnızca `codex` komutunu saran bir shell fonksiyonu ekler; başka programların editör tercihini değiştirmez.
 

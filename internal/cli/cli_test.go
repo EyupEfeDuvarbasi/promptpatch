@@ -32,15 +32,24 @@ func TestLocalQuestionsAreLimited(t *testing.T) {
 }
 
 func TestLocalImproveLabelsOnlyProvidedAnswers(t *testing.T) {
-	got := LocalImprove("şunu düzelt", []string{"Hangi dosya?", "Beklenen sonuç?"}, []string{"src/parser.go", ""})
-	if !strings.Contains(got, "Görev:\nşunu düzelt\n\nBağlam:\n- src/parser.go") || strings.Contains(got, "Hangi dosya?") {
+	got := LocalImprove("şunu düzelt", []string{"Hangi dosya?", "Beklenen sonuç?"}, []string{"src/parser.go", "boş girdi hata dönsün"})
+	if !strings.Contains(got, "# Hata düzeltme\n\n## Amaç\nşunu düzelt") || !strings.Contains(got, "## Bağlam\n- src/parser.go") || !strings.Contains(got, "## Beklenen sonuç\n- boş girdi hata dönsün") || strings.Contains(got, "Hangi dosya?") {
 		t.Fatalf("improved=%q", got)
 	}
 }
 
-func TestLocalImproveDoesNotPretendToImproveCompletePrompt(t *testing.T) {
-	if got := LocalImprove("net prompt", nil, nil); got != "net prompt" {
+func TestLocalImprovePreservesAcceptanceCriteria(t *testing.T) {
+	got := LocalImprove("footer ekle\nKabul kriterleri: tüm linkler erişilebilir olmalı", nil, nil)
+	if !strings.Contains(got, "# Özellik geliştirme") || !strings.Contains(got, "## Kabul kriterleri\ntüm linkler erişilebilir olmalı") {
 		t.Fatalf("improved=%q", got)
+	}
+}
+
+func TestLocalImproveRaisesStructuralScore(t *testing.T) {
+	original := "şunu düzelt"
+	improved := LocalImprove(original, []string{"Hangi dosya?", "Beklenen sonuç?"}, []string{"src/parser.go", "boş girdi hata dönsün"})
+	if score.Evaluate(improved).Score <= score.Evaluate(original).Score {
+		t.Fatalf("scores: original=%d improved=%d", score.Evaluate(original).Score, score.Evaluate(improved).Score)
 	}
 }
 

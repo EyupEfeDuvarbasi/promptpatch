@@ -115,18 +115,19 @@ func LocalQuestions(result score.Result) []string {
 }
 
 func LocalImprove(prompt string, questions, answers []string) string {
-	result := strings.TrimSpace(prompt)
+	task, criteria := splitAcceptanceCriteria(prompt)
+	sections := []string{"# " + promptKind(task), "\n## Amaç\n" + strings.TrimSpace(task)}
 	for i, answer := range answers {
 		answer = strings.TrimSpace(answer)
 		if answer == "" || i >= len(questions) {
 			continue
 		}
-		if !strings.HasPrefix(result, "Görev:\n") {
-			result = "Görev:\n" + result
-		}
-		result += "\n\n" + localSection(questions[i]) + ":\n- " + answer
+		sections = append(sections, "\n## "+localSection(questions[i])+"\n- "+answer)
 	}
-	return strings.TrimSpace(result)
+	if criteria != "" {
+		sections = append(sections, "\n## Kabul kriterleri\n"+criteria)
+	}
+	return strings.TrimSpace(strings.Join(sections, "\n"))
 }
 
 func localSection(question string) string {
@@ -134,10 +135,35 @@ func localSection(question string) string {
 	if strings.Contains(question, "dosya") || strings.Contains(question, "fonksiyon") || strings.Contains(question, "teknoloji") {
 		return "Bağlam"
 	}
-	if strings.Contains(question, "davranış") || strings.Contains(question, "çıktı") || strings.Contains(question, "format") {
+	if strings.Contains(question, "davranış") || strings.Contains(question, "sonuç") || strings.Contains(question, "çıktı") || strings.Contains(question, "format") {
 		return "Beklenen sonuç"
 	}
-	return "Açıklama"
+	return "Yapılacak değişiklik"
+}
+
+func promptKind(prompt string) string {
+	text := strings.ToLower(prompt)
+	switch {
+	case strings.Contains(text, "düzelt") || strings.Contains(text, "hata") || strings.Contains(text, "bug") || strings.Contains(text, "fix"):
+		return "Hata düzeltme"
+	case strings.Contains(text, "refactor") || strings.Contains(text, "yeniden düzenle"):
+		return "Refactor"
+	case strings.Contains(text, "ekle") || strings.Contains(text, "oluştur") || strings.Contains(text, "add") || strings.Contains(text, "create"):
+		return "Özellik geliştirme"
+	default:
+		return "Geliştirme görevi"
+	}
+}
+
+func splitAcceptanceCriteria(prompt string) (string, string) {
+	text := strings.TrimSpace(prompt)
+	lower := strings.ToLower(text)
+	for _, marker := range []string{"kabul kriterleri:", "acceptance criteria:"} {
+		if index := strings.Index(lower, marker); index >= 0 {
+			return strings.TrimSpace(text[:index]), strings.TrimSpace(text[index+len(marker):])
+		}
+	}
+	return text, ""
 }
 
 func readPrompt(args []string, in io.Reader) (string, error) {

@@ -23,10 +23,10 @@ var ambiguousTerms = []string{"şunu", "bunu", "bir şekilde", "falan filan"}
 var contextTerms = []string{
 	".go", ".ts", ".tsx", ".js", ".jsx", ".py", ".rs", ".java", ".rb", ".php",
 	"fonksiyon", "function", "func", "metot", "method", "sınıf", "class",
-	"react", "go", "golang", "python", "node", "typescript", "javascript", "rust", "java",
+	"bağlam", "react", "go", "golang", "python", "node", "typescript", "javascript", "rust", "java",
 }
 var constraintTerms = []string{"yalnızca", "sadece", "değiştirme", "koru", "olmamalı", "must", "only", "without", "do not"}
-var outputTerms = []string{"çıktı", "format", "json", "markdown", "tablo", "liste", "test", "örnek", "example"}
+var outputTerms = []string{"çıktı", "format", "beklenen sonuç", "kabul kriterleri", "json", "markdown", "tablo", "liste", "test", "örnek", "example"}
 var purposeTerms = []string{"çünkü", "amac", "amaç", "böylece", "için", "so that", "because"}
 var actionTerms = []string{"düzelt", "ekle", "oluştur", "güncelle", "sil", "refactor", "fix", "add", "create", "update", "remove"}
 
