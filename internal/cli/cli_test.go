@@ -25,7 +25,7 @@ func TestBlendUsesConfiguredWeights(t *testing.T) {
 }
 
 func TestLocalQuestionsAreLimited(t *testing.T) {
-	questions := localQuestions(score.Result{NeedsContext: true, NeedsFormat: true, NeedsClarifying: true})
+	questions := LocalQuestions(score.Result{NeedsContext: true, NeedsFormat: true, NeedsClarifying: true})
 	if len(questions) != 2 {
 		t.Fatalf("questions=%v", questions)
 	}

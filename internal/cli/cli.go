@@ -40,7 +40,7 @@ func Run(ctx context.Context, args []string, in io.Reader, out io.Writer, client
 	}
 
 	originalRules := score.Evaluate(prompt)
-	improvedPrompt := localImprove(prompt)
+	improvedPrompt := LocalImprove(prompt)
 	original := originalRules
 	improved := score.Evaluate(improvedPrompt)
 	asked := false
@@ -70,13 +70,13 @@ func Run(ctx context.Context, args []string, in io.Reader, out io.Writer, client
 		improvedPrompt = improvedLLM.ImprovedPrompt
 		original = blend(originalRules, originalLLM.Criteria)
 		improved = blend(score.Evaluate(improvedPrompt), improvedLLM.ImprovedCriteria)
-	} else if questions := localQuestions(originalRules); len(questions) > 0 {
+	} else if questions := LocalQuestions(originalRules); len(questions) > 0 {
 		answers, err := ask(out, in, questions)
 		if err != nil {
 			return err
 		}
 		asked = true
-		improvedPrompt = localImprove(prompt + "\n\nEk bilgiler:\n" + answers)
+		improvedPrompt = LocalImprove(prompt + "\n\nEk bilgiler:\n" + answers)
 		improved = score.Evaluate(improvedPrompt)
 	}
 	if *detail {
@@ -98,7 +98,7 @@ func Run(ctx context.Context, args []string, in io.Reader, out io.Writer, client
 	return nil
 }
 
-func localQuestions(result score.Result) []string {
+func LocalQuestions(result score.Result) []string {
 	questions := []string{}
 	if result.NeedsContext {
 		questions = append(questions, "Hangi dosya, fonksiyon veya teknolojiyle ilgili?")
@@ -115,7 +115,7 @@ func localQuestions(result score.Result) []string {
 	return questions
 }
 
-func localImprove(prompt string) string {
+func LocalImprove(prompt string) string {
 	return "Görev:\n" + prompt
 }
 

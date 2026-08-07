@@ -26,6 +26,14 @@ promptcheck setup-shell
 
 Yeni terminal açtıktan sonra shell komut satırındaki prompt metnini `Ctrl-G` ile değerlendirebilirsiniz. Kısayol zsh ve bash içindir.
 
+KDE/Wayland'da Codex açıkken de çalışan GUI kısayolu için bir kez:
+
+```sh
+promptcheck install-hotkey
+```
+
+Portal izin penceresinde `Ctrl-G` kısayolunu onaylayın. Sonrasında `Ctrl-G`, Promptcheck penceresini açar.
+
 ## İsteğe bağlı LLM modu
 
 Varsayılan mod tamamen local çalışır ve API anahtarı istemez. Daha ayrıntılı anlamsal değerlendirme için `--model <isim>` kullanın; araç ilk kullanımda sağlayıcıyı ve gerekirse API anahtarını sorar.
