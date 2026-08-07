@@ -197,17 +197,44 @@ func SetupCodex() error {
 	if strings.HasSuffix(os.Getenv("SHELL"), "bash") {
 		rc = filepath.Join(home, ".bashrc")
 	}
-	const marker = "# promptcheck Codex editor"
-	contents, _ := os.ReadFile(rc)
-	if strings.Contains(string(contents), marker) {
-		return nil
-	}
-	block := "\n" + marker + "\ncodex() { VISUAL='promptcheck edit' EDITOR='promptcheck edit' command codex \"$@\"; }\n"
-	file, err := os.OpenFile(rc, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	executable, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	_, err = file.WriteString(block)
-	return err
+	contents, _ := os.ReadFile(rc)
+	block := codexBlock(executable)
+	updated := replaceCodexBlock(string(contents), block)
+	if updated == string(contents) {
+		return nil
+	}
+	return os.WriteFile(rc, []byte(updated), 0600)
+}
+
+const codexMarker = "# promptcheck Codex editor"
+
+func codexBlock(executable string) string {
+	editor := shellQuote(executable + " edit")
+	return "\n" + codexMarker + "\ncodex() { VISUAL=" + editor + " EDITOR=" + editor + " command codex \"$@\"; }\n"
+}
+
+func replaceCodexBlock(contents, block string) string {
+	start := strings.Index(contents, codexMarker)
+	if start < 0 {
+		return contents + block
+	}
+	end := strings.Index(contents[start:], "\n")
+	if end < 0 {
+		return contents[:start] + strings.TrimPrefix(block, "\n")
+	}
+	end += start + 1
+	endLine := strings.Index(contents[end:], "\n")
+	if endLine < 0 {
+		return contents[:start] + block
+	}
+	end += endLine + 1
+	return contents[:start] + block + contents[end:]
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\\"'\\\"'") + "'"
 }
