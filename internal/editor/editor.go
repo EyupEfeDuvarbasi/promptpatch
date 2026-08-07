@@ -2,11 +2,11 @@
 package editor
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 
@@ -88,15 +88,50 @@ func ask(questions []string) []string {
 	if len(questions) == 0 {
 		return nil
 	}
-	fmt.Print("\033[2J\033[H")
-	reader := bufio.NewReader(os.Stdin)
 	answers := make([]string, len(questions))
-	for i, question := range questions {
-		fmt.Printf("%s\n> ", question)
-		answer, _ := reader.ReadString('\n')
-		answers[i] = strings.TrimSpace(answer)
-	}
+	raw(func() bool {
+		for i, question := range questions {
+			clear()
+			screenln("Eksik bilgi", i+1, "/", len(questions))
+			screenln(question)
+			screenln("Cevabını yaz ve Enter'a bas. Backspace ile silebilirsin.")
+			screenf("> ")
+			answers[i] = readAnswer()
+		}
+		return true
+	})
 	return answers
+}
+
+func readAnswer() string {
+	var answer []byte
+	for {
+		key, ok := readByte()
+		if !ok || key == 3 { // Ctrl+C
+			return strings.TrimSpace(string(answer))
+		}
+		switch key {
+		case '\r', '\n':
+			return strings.TrimSpace(string(answer))
+		case 8, 127:
+			answer = removeLastRune(answer)
+			fmt.Print("\r\033[2K")
+			screenf("> %s", string(answer))
+		default:
+			if key >= 32 {
+				answer = append(answer, key)
+				screenf("%s", string(key))
+			}
+		}
+	}
+}
+
+func removeLastRune(value []byte) []byte {
+	if len(value) == 0 {
+		return value
+	}
+	_, size := utf8.DecodeLastRune(value)
+	return value[:len(value)-size]
 }
 
 func raw(run func() bool) bool {

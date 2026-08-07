@@ -31,3 +31,9 @@ func TestScreenLinesUseCarriageReturn(t *testing.T) {
 		t.Fatalf("line ending=%q", got)
 	}
 }
+
+func TestRemoveLastRunePreservesTurkishText(t *testing.T) {
+	if got := string(removeLastRune([]byte("çerez"))); got != "çere" {
+		t.Fatalf("answer=%q", got)
+	}
+}
