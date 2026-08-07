@@ -201,8 +201,15 @@ func SetupCodex() error {
 	if err != nil {
 		return err
 	}
+	editorPath := filepath.Join(home, ".local", "share", "promptpatch", "bin", "promptpatch-codex-editor")
+	if err := os.MkdirAll(filepath.Dir(editorPath), 0700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(editorPath, []byte(wrapperScript(executable)), 0700); err != nil {
+		return err
+	}
 	contents, _ := os.ReadFile(rc)
-	block := codexBlock(executable)
+	block := codexBlock(editorPath)
 	updated := replaceCodexBlock(string(contents), block)
 	if updated == string(contents) {
 		return nil
@@ -212,9 +219,13 @@ func SetupCodex() error {
 
 const codexMarker = "# promptcheck Codex editor"
 
-func codexBlock(executable string) string {
-	editor := shellQuote(executable + " edit")
+func codexBlock(editorPath string) string {
+	editor := shellQuote(editorPath)
 	return "\n" + codexMarker + "\ncodex() { VISUAL=" + editor + " EDITOR=" + editor + " command codex \"$@\"; }\n"
+}
+
+func wrapperScript(executable string) string {
+	return "#!/bin/sh\nexec " + shellQuote(executable) + " edit \"$@\"\n"
 }
 
 func replaceCodexBlock(contents, block string) string {

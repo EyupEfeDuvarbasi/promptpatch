@@ -14,8 +14,14 @@ func TestWrapDoesNotExceedColumnWidth(t *testing.T) {
 }
 
 func TestReplaceCodexBlockUsesAbsoluteEditor(t *testing.T) {
-	got := replaceCodexBlock("before\n# promptcheck Codex editor\ncodex() { old; }\nafter\n", codexBlock("/opt/bin/promptcheck"))
-	if !strings.Contains(got, "VISUAL='/opt/bin/promptcheck edit'") || strings.Contains(got, "old") {
+	got := replaceCodexBlock("before\n# promptcheck Codex editor\ncodex() { old; }\nafter\n", codexBlock("/opt/bin/promptpatch-codex-editor"))
+	if !strings.Contains(got, "VISUAL='/opt/bin/promptpatch-codex-editor'") || strings.Contains(got, "old") {
 		t.Fatalf("block=%q", got)
+	}
+}
+
+func TestWrapperPassesEditorFile(t *testing.T) {
+	if got := wrapperScript("/opt/bin/promptcheck"); got != "#!/bin/sh\nexec '/opt/bin/promptcheck' edit \"$@\"\n" {
+		t.Fatalf("script=%q", got)
 	}
 }
