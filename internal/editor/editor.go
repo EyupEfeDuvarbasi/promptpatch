@@ -2,15 +2,18 @@
 package editor
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/term"
 
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/cli"
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/llm"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
 
@@ -29,11 +32,48 @@ func Run(path string) error {
 	if !complete {
 		return nil
 	}
-	improvedPrompt := cli.LocalImprove(prompt, questions, answers)
-	if !chooseComparison(prompt, result, improvedPrompt, score.Evaluate(improvedPrompt)) {
+	client, err := llm.New(llm.Ollama, "")
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	assessment, err := client.Improve(ctx, prompt, questions, answers)
+	if err != nil {
+		showModelError(err)
 		return nil
 	}
-	return os.WriteFile(path, []byte(improvedPrompt+"\n"), 0600)
+	original := resultFromCriteria(assessment.Criteria)
+	improved := resultFromCriteria(assessment.ImprovedCriteria)
+	if !chooseComparison(prompt, original, assessment.ImprovedPrompt, improved) {
+		return nil
+	}
+	return os.WriteFile(path, []byte(assessment.ImprovedPrompt+"\n"), 0600)
+}
+
+func resultFromCriteria(criteria []score.Criterion) score.Result {
+	if len(criteria) == 0 {
+		return score.Result{}
+	}
+	total := 0
+	for _, criterion := range criteria {
+		total += criterion.Score
+	}
+	return score.Result{Criteria: criteria, Score: total / len(criteria)}
+}
+
+func showModelError(err error) {
+	raw(func() bool {
+		clear()
+		screenln("Yerel model kullanılamıyor")
+		for _, line := range wrap(err.Error(), width()-2) {
+			screenln("  " + line)
+		}
+		screenln("\nÖzgün prompt korunuyor. Enter'a bas.")
+		for readKey() != "enter" {
+		}
+		return true
+	})
 }
 
 func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result) bool {

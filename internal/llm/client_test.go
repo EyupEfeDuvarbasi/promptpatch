@@ -16,7 +16,7 @@ import (
 const apiAssessment = `{"clarity":80,"specificity":70,"context":60,"constraints":50,"purpose":90,"questions":[],"improved_prompt":"Detaylı prompt","improved_clarity":90,"improved_specificity":80,"improved_context":70,"improved_constraints":80,"improved_purpose":100}`
 
 func TestAssessSendsProviderAuthAndParsesOutput(t *testing.T) {
-	for _, provider := range []Provider{OpenAI, Gemini, Anthropic} {
+	for _, provider := range []Provider{OpenAI, Gemini, Anthropic, Ollama} {
 		t.Run(string(provider), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if provider == OpenAI && r.Header.Get("Authorization") != "Bearer test-key" {
@@ -34,6 +34,10 @@ func TestAssessSendsProviderAuthAndParsesOutput(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				if provider == Anthropic {
 					_, _ = w.Write([]byte(`{"content":[{"type":"text","text":` + strconv.Quote(apiAssessment) + `}]}`))
+					return
+				}
+				if provider == Ollama {
+					_, _ = w.Write([]byte(`{"response":` + strconv.Quote(apiAssessment) + `}`))
 					return
 				}
 				_, _ = w.Write([]byte(`{"output_text":` + strconv.Quote(apiAssessment) + `}`))
@@ -76,6 +80,22 @@ func TestImproveSendsAnswersAndReturnsRewrite(t *testing.T) {
 	}
 }
 
+func TestOllamaImproveReturnsRewrite(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"improved_prompt":"src/parser.go dosyasını düzelt."}`) + `}`))
+	}))
+	defer server.Close()
+	client, err := New(Ollama, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.URL = server.URL
+	result, err := client.Improve(context.Background(), "şunu düzelt", []string{"Hangi dosya?"}, []string{"src/parser.go"})
+	if err != nil || result.ImprovedPrompt != "src/parser.go dosyasını düzelt." {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
 func TestLiveProviders(t *testing.T) {
 	if os.Getenv("PROMPTCHECK_LIVE") != "1" {
 		t.Skip("set PROMPTCHECK_LIVE=1 to call provider APIs")
@@ -96,6 +116,31 @@ func TestLiveProviders(t *testing.T) {
 				t.Fatalf("assessment failed: %v", err)
 			}
 		})
+	}
+}
+
+func TestLiveOllamaRewrite(t *testing.T) {
+	if os.Getenv("PROMPTCHECK_OLLAMA") != "1" {
+		t.Skip("set PROMPTCHECK_OLLAMA=1 to call the local model")
+	}
+	client, err := New(Ollama, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	assessment, err := client.Improve(ctx, "şunu düzelt", []string{"Hangi dosya?", "Beklenen davranış ne?"}, []string{"src/parser.go", "Boş girdi hata dönsün"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assessment.ImprovedPrompt == "" || assessment.ImprovedPrompt == "şunu düzelt" {
+		t.Fatalf("genuine rewrite missing: %#v", assessment)
+	}
+	if !strings.Contains(assessment.ImprovedPrompt, "src/parser.go") || !strings.Contains(strings.ToLower(assessment.ImprovedPrompt), "boş") {
+		t.Fatalf("context missing from rewrite: %q", assessment.ImprovedPrompt)
+	}
+	if strings.Contains(assessment.ImprovedPrompt, "Soru:") || strings.Contains(assessment.ImprovedPrompt, "Cevap:") {
+		t.Fatalf("raw Q&A leaked into rewrite: %q", assessment.ImprovedPrompt)
 	}
 }
 

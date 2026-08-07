@@ -19,12 +19,14 @@ const (
 	OpenAI    Provider = "openai"
 	Gemini    Provider = "gemini"
 	Anthropic Provider = "anthropic"
+	Ollama    Provider = "ollama"
 )
 
 const (
 	defaultOpenAIModel    = "gpt-5.6-terra"
 	defaultGeminiModel    = "gemini-3.6-flash"
 	defaultAnthropicModel = "claude-sonnet-4-20250514"
+	defaultOllamaModel    = "qwen2.5:7b"
 )
 
 type Client struct {
@@ -60,7 +62,7 @@ type assessmentJSON struct {
 }
 
 func New(provider Provider, apiKey string) (Client, error) {
-	if apiKey == "" {
+	if apiKey == "" && provider != Ollama {
 		return Client{}, fmt.Errorf("%s API key is missing", provider)
 	}
 	switch provider {
@@ -70,6 +72,8 @@ func New(provider Provider, apiKey string) (Client, error) {
 		return Client{Provider: provider, APIKey: apiKey, Model: defaultGeminiModel, URL: "https://generativelanguage.googleapis.com/v1beta/interactions"}, nil
 	case Anthropic:
 		return Client{Provider: provider, APIKey: apiKey, Model: defaultAnthropicModel, URL: "https://api.anthropic.com/v1/messages"}, nil
+	case Ollama:
+		return Client{Provider: provider, Model: defaultOllamaModel, URL: "http://127.0.0.1:11434/api/generate"}, nil
 	default:
 		return Client{}, fmt.Errorf("unsupported provider %q", provider)
 	}
@@ -88,7 +92,18 @@ func (c Client) Improve(ctx context.Context, prompt string, questions, answers [
 	if strings.TrimSpace(prompt) == "" {
 		return Assessment{}, fmt.Errorf("prompt is empty")
 	}
-	bundle, err := json.Marshal(map[string]any{"original_prompt": prompt, "questions": questions, "answers": answers})
+	if c.Provider == Ollama {
+		return c.improveOllama(ctx, prompt, questions, answers)
+	}
+	context := make([]map[string]string, 0, len(questions))
+	for i, question := range questions {
+		answer := ""
+		if i < len(answers) {
+			answer = answers[i]
+		}
+		context = append(context, map[string]string{"question": question, "answer": answer})
+	}
+	bundle, err := json.Marshal(map[string]any{"original_prompt": prompt, "additional_context": context})
 	if err != nil {
 		return Assessment{}, err
 	}
@@ -97,9 +112,65 @@ func (c Client) Improve(ctx context.Context, prompt string, questions, answers [
 		return Assessment{}, err
 	}
 	if len(assessment.Questions) != 0 || assessment.ImprovedPrompt == "" {
-		return Assessment{}, fmt.Errorf("model iyileştirilmiş prompt üretmedi")
+		return Assessment{}, fmt.Errorf("model iyileştirilmiş prompt üretmedi (sorular: %s, çıktı: %d karakter)", strings.Join(assessment.Questions, " | "), len(assessment.ImprovedPrompt))
 	}
 	return assessment, nil
+}
+
+func (c Client) improveOllama(ctx context.Context, prompt string, questions, answers []string) (Assessment, error) {
+	parts := []string{"Özgün görev:\n" + prompt}
+	for i, answer := range answers {
+		if answer != "" && i < len(questions) {
+			parts = append(parts, "Doğrulanmış bilgi ("+questions[i]+"): "+answer)
+		}
+	}
+	body, err := json.Marshal(map[string]any{
+		"model": c.Model, "system": ollamaRewriteRubric, "prompt": strings.Join(parts, "\n\n"),
+		"format": map[string]any{"type": "object", "properties": map[string]any{"improved_prompt": map[string]string{"type": "string"}}, "required": []string{"improved_prompt"}},
+		"stream": false, "keep_alive": "5m", "options": map[string]any{"temperature": 0, "num_predict": 300},
+	})
+	if err != nil {
+		return Assessment{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewReader(body))
+	if err != nil {
+		return Assessment{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := c.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return Assessment{}, err
+	}
+	defer res.Body.Close()
+	responseBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		return Assessment{}, err
+	}
+	if res.StatusCode < http.StatusOK || res.StatusCode >= http.StatusMultipleChoices {
+		return Assessment{}, fmt.Errorf("Ollama API returned %s: %s", res.Status, apiMessage(responseBody))
+	}
+	var response struct {
+		Response string `json:"response"`
+	}
+	var rewritten struct {
+		ImprovedPrompt string `json:"improved_prompt"`
+	}
+	if err := json.Unmarshal(responseBody, &response); err != nil {
+		return Assessment{}, fmt.Errorf("yerel model yanıtı çözümlenemedi: %w", err)
+	}
+	if err := json.Unmarshal([]byte(response.Response), &rewritten); err != nil {
+		return Assessment{}, fmt.Errorf("yerel model yanıtı çözümlenemedi")
+	}
+	if strings.TrimSpace(rewritten.ImprovedPrompt) == "" {
+		return Assessment{}, fmt.Errorf("yerel model iyileştirilmiş prompt üretmedi")
+	}
+	original := score.Evaluate(prompt)
+	improved := score.Evaluate(rewritten.ImprovedPrompt)
+	return Assessment{Criteria: original.Criteria, Score: original.Score, ImprovedPrompt: strings.TrimSpace(rewritten.ImprovedPrompt), ImprovedCriteria: improved.Criteria, ImprovedScore: improved.Score}, nil
 }
 
 func (c Client) assess(ctx context.Context, input, instructions string) (Assessment, error) {
@@ -116,7 +187,7 @@ func (c Client) assess(ctx context.Context, input, instructions string) (Assessm
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	} else if c.Provider == Gemini {
 		req.Header.Set("x-goog-api-key", c.APIKey)
-	} else {
+	} else if c.Provider == Anthropic {
 		req.Header.Set("x-api-key", c.APIKey)
 		req.Header.Set("anthropic-version", "2023-06-01")
 	}
@@ -170,12 +241,19 @@ func (c Client) requestBody(prompt, instructions string) ([]byte, error) {
 			"messages": []map[string]any{{"role": "user", "content": prompt}},
 		})
 	}
+	if c.Provider == Ollama {
+		return json.Marshal(map[string]any{
+			"model": c.Model, "system": instructions, "prompt": prompt, "format": assessmentSchema(),
+			"stream": false, "think": false, "keep_alive": "5m", "options": map[string]any{"temperature": 0},
+		})
+	}
 	return nil, fmt.Errorf("unsupported provider %q", c.Provider)
 }
 
 func (c Client) decodeResponse(body []byte) (Assessment, error) {
 	var response struct {
 		OutputText string `json:"output_text"`
+		Response   string `json:"response"`
 		Content    []struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
@@ -191,6 +269,9 @@ func (c Client) decodeResponse(body []byte) (Assessment, error) {
 			}
 		}
 		return Assessment{}, fmt.Errorf("Anthropic response has no text content")
+	}
+	if c.Provider == Ollama {
+		return decodeAssessment(response.Response)
 	}
 	return decodeAssessment(response.OutputText)
 }
@@ -271,7 +352,9 @@ func apiMessage(body []byte) string {
 
 const rubric = `Evaluate this developer prompt on five criteria from 0 to 100: clarity, specificity, context, constraints/output, and purpose/success criteria. Do not penalize omitted file names or technologies unless they are needed by the request. Always score the input in the base fields. If essential information prevents a useful improvement, return at most two concise Turkish questions, an empty improved_prompt, and zero for every improved_* score. Otherwise return no questions, a Turkish improved_prompt, and score that improved prompt in every improved_* field. Return only JSON matching the schema.`
 
-const rewriteRubric = `You receive a JSON object with original_prompt, up to two questions, and their answers. Score only original_prompt in the base fields. Use the answers to produce a genuinely rewritten Turkish developer prompt: integrate relevant context, expected behavior, constraints, and acceptance criteria naturally; do not append the questions or answers verbatim; do not invent technical facts. Always return no questions and a non-empty improved_prompt. Score the rewritten prompt in every improved_* field. Return only JSON matching the schema.`
+const rewriteRubric = `Girdi bir JSON nesnesidir: original_prompt ve additional_context içindeki soru-cevap çiftleri. original_prompt'u temel alanlarda puanla. additional_context bilgilerini doğal biçimde birleştirerek Türkçe, gerçekten yeniden yazılmış bir geliştirici promptu üret. Soruları veya cevapları metnin sonuna ekleme; teknik bilgi uydurma. ÇIKTI KURALLARI: questions alanı mutlaka boş dizi [] olmalı; improved_prompt mutlaka boş olmayan yeniden yazılmış prompt olmalı. improved_* alanlarında yeni promptu puanla. Yalnızca şemaya uyan JSON döndür.`
+
+const ollamaRewriteRubric = `Tek bir Türkçe geliştirici promptu yeniden yaz. Özgün görevin amacını koru; doğrulanmış bilgileri doğal cümlelere dönüştür. Soru-cevap biçimi, "soru", "cevap", "doğrulanmış bilgi" veya "ek bilgi" ifadelerini yazma. Teknik ayrıntı uydurma, çözüm veya kod verme. improved_prompt alanında yalnızca kullanıcının doğrudan kullanabileceği eksiksiz prompt yer almalı.`
 
 func average(criteria []score.Criterion) int {
 	total := 0
