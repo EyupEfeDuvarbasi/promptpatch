@@ -2,11 +2,13 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -48,6 +50,29 @@ func TestAssessSendsProviderAuthAndParsesOutput(t *testing.T) {
 				t.Fatalf("result=%#v err=%v", result, err)
 			}
 		})
+	}
+}
+
+func TestImproveSendsAnswersAndReturnsRewrite(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var request struct {
+			Input string `json:"input"`
+		}
+		if err := json.Unmarshal(body, &request); err != nil || !strings.Contains(request.Input, `"original_prompt":"şunu düzelt"`) || !strings.Contains(request.Input, `"src/parser.go"`) {
+			t.Fatalf("request=%s", body)
+		}
+		_, _ = w.Write([]byte(`{"output_text":` + strconv.Quote(apiAssessment) + `}`))
+	}))
+	defer server.Close()
+	client, err := New(OpenAI, "test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.URL = server.URL
+	result, err := client.Improve(context.Background(), "şunu düzelt", []string{"Hangi dosya?"}, []string{"src/parser.go"})
+	if err != nil || result.ImprovedPrompt != "Detaylı prompt" {
+		t.Fatalf("result=%#v err=%v", result, err)
 	}
 }
 

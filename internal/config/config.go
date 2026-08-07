@@ -71,6 +71,38 @@ func Resolve(path string, in io.Reader, out io.Writer) (llm.Client, error) {
 	return client, nil
 }
 
+// ResolveAutomatic uses a saved provider or the least-cost available default without prompting.
+func ResolveAutomatic(path string) (llm.Client, error) {
+	config, err := Load(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return llm.Client{}, err
+	}
+	keys := map[llm.Provider]string{llm.Gemini: os.Getenv("GEMINI_API_KEY"), llm.OpenAI: os.Getenv("OPENAI_API_KEY"), llm.Anthropic: os.Getenv("ANTHROPIC_API_KEY")}
+	if config.Provider == "" {
+		for _, provider := range []llm.Provider{llm.Gemini, llm.OpenAI, llm.Anthropic} {
+			if keys[provider] != "" {
+				config.Provider = provider
+				break
+			}
+		}
+	}
+	if config.Provider == "" {
+		return llm.Client{}, errors.New("gerçek iyileştirme için model erişimi gerekli")
+	}
+	key := keys[config.Provider]
+	if key == "" {
+		key = config.APIKey
+	}
+	client, err := llm.New(config.Provider, key)
+	if err != nil {
+		return llm.Client{}, err
+	}
+	if config.Model != "" {
+		client.Model = config.Model
+	}
+	return client, nil
+}
+
 func Load(path string) (Config, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {

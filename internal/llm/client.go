@@ -80,7 +80,30 @@ func (c Client) Assess(ctx context.Context, prompt string) (Assessment, error) {
 	if strings.TrimSpace(prompt) == "" {
 		return Assessment{}, fmt.Errorf("prompt is empty")
 	}
-	body, err := c.requestBody(prompt)
+	return c.assess(ctx, prompt, rubric)
+}
+
+// Improve scores only the original prompt and rewrites it using the supplied answers.
+func (c Client) Improve(ctx context.Context, prompt string, questions, answers []string) (Assessment, error) {
+	if strings.TrimSpace(prompt) == "" {
+		return Assessment{}, fmt.Errorf("prompt is empty")
+	}
+	bundle, err := json.Marshal(map[string]any{"original_prompt": prompt, "questions": questions, "answers": answers})
+	if err != nil {
+		return Assessment{}, err
+	}
+	assessment, err := c.assess(ctx, string(bundle), rewriteRubric)
+	if err != nil {
+		return Assessment{}, err
+	}
+	if len(assessment.Questions) != 0 || assessment.ImprovedPrompt == "" {
+		return Assessment{}, fmt.Errorf("model iyileştirilmiş prompt üretmedi")
+	}
+	return assessment, nil
+}
+
+func (c Client) assess(ctx context.Context, input, instructions string) (Assessment, error) {
+	body, err := c.requestBody(input, instructions)
 	if err != nil {
 		return Assessment{}, err
 	}
@@ -118,14 +141,14 @@ func (c Client) Assess(ctx context.Context, prompt string) (Assessment, error) {
 	return c.decodeResponse(responseBody)
 }
 
-func (c Client) requestBody(prompt string) ([]byte, error) {
+func (c Client) requestBody(prompt, instructions string) ([]byte, error) {
 	if c.Model == "" {
 		return nil, fmt.Errorf("model is missing")
 	}
 	if c.Provider == OpenAI {
 		return json.Marshal(map[string]any{
 			"model":        c.Model,
-			"instructions": rubric,
+			"instructions": instructions,
 			"input":        prompt,
 			"text": map[string]any{"format": map[string]any{
 				"type": "json_schema", "name": "prompt_assessment", "strict": true, "schema": assessmentSchema(),
@@ -135,7 +158,7 @@ func (c Client) requestBody(prompt string) ([]byte, error) {
 	if c.Provider == Gemini {
 		return json.Marshal(map[string]any{
 			"model": c.Model,
-			"input": rubric + "\n\nPROMPT:\n" + prompt,
+			"input": instructions + "\n\nPROMPT:\n" + prompt,
 			"response_format": map[string]any{
 				"type": "text", "mime_type": "application/json", "schema": assessmentSchema(),
 			},
@@ -143,7 +166,7 @@ func (c Client) requestBody(prompt string) ([]byte, error) {
 	}
 	if c.Provider == Anthropic {
 		return json.Marshal(map[string]any{
-			"model": c.Model, "max_tokens": 1000, "system": rubric,
+			"model": c.Model, "max_tokens": 1000, "system": instructions,
 			"messages": []map[string]any{{"role": "user", "content": prompt}},
 		})
 	}
@@ -247,6 +270,8 @@ func apiMessage(body []byte) string {
 }
 
 const rubric = `Evaluate this developer prompt on five criteria from 0 to 100: clarity, specificity, context, constraints/output, and purpose/success criteria. Do not penalize omitted file names or technologies unless they are needed by the request. Always score the input in the base fields. If essential information prevents a useful improvement, return at most two concise Turkish questions, an empty improved_prompt, and zero for every improved_* score. Otherwise return no questions, a Turkish improved_prompt, and score that improved prompt in every improved_* field. Return only JSON matching the schema.`
+
+const rewriteRubric = `You receive a JSON object with original_prompt, up to two questions, and their answers. Score only original_prompt in the base fields. Use the answers to produce a genuinely rewritten Turkish developer prompt: integrate relevant context, expected behavior, constraints, and acceptance criteria naturally; do not append the questions or answers verbatim; do not invent technical facts. Always return no questions and a non-empty improved_prompt. Score the rewritten prompt in every improved_* field. Return only JSON matching the schema.`
 
 func average(criteria []score.Criterion) int {
 	total := 0

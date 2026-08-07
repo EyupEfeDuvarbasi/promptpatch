@@ -2,6 +2,7 @@
 package editor
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"golang.org/x/term"
 
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/cli"
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/config"
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/llm"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
 
@@ -29,11 +32,55 @@ func Run(path string) error {
 	if !complete {
 		return nil
 	}
-	improved := cli.LocalImprove(prompt, questions, answers)
-	if !chooseComparison(prompt, result, improved, score.Evaluate(improved)) {
+	client, err := automaticClient()
+	if err != nil {
+		showModelError(err)
 		return nil
 	}
-	return os.WriteFile(path, []byte(improved+"\n"), 0600)
+	assessment, err := client.Improve(context.Background(), prompt, questions, answers)
+	if err != nil {
+		showModelError(err)
+		return nil
+	}
+	original := resultFromCriteria(assessment.Criteria)
+	improved := resultFromCriteria(assessment.ImprovedCriteria)
+	if !chooseComparison(prompt, original, assessment.ImprovedPrompt, improved) {
+		return nil
+	}
+	return os.WriteFile(path, []byte(assessment.ImprovedPrompt+"\n"), 0600)
+}
+
+func automaticClient() (llm.Client, error) {
+	path, err := config.DefaultPath()
+	if err != nil {
+		return llm.Client{}, err
+	}
+	return config.ResolveAutomatic(path)
+}
+
+func resultFromCriteria(criteria []score.Criterion) score.Result {
+	if len(criteria) == 0 {
+		return score.Result{}
+	}
+	total := 0
+	for _, criterion := range criteria {
+		total += criterion.Score
+	}
+	return score.Result{Criteria: criteria, Score: total / len(criteria)}
+}
+
+func showModelError(err error) {
+	raw(func() bool {
+		clear()
+		screenln("İyileştirme yapılamadı")
+		for _, line := range wrap(err.Error(), width()-2) {
+			screenln("  " + line)
+		}
+		screenln("\nÖzgün prompt korunuyor. Enter'a bas.")
+		for readKey() != "enter" {
+		}
+		return true
+	})
 }
 
 func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result) bool {
