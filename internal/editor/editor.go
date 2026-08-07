@@ -24,42 +24,16 @@ func Run(path string) error {
 		return nil
 	}
 	result := score.Evaluate(prompt)
-	if !choose(prompt, result, "İyileştir", "Özgün promptu koru") {
+	questions := cli.LocalQuestions(result)
+	answers, complete := ask(questions)
+	if !complete {
 		return nil
 	}
-	questions := cli.LocalQuestions(result)
-	answers := ask(questions)
 	improved := cli.LocalImprove(prompt, questions, answers)
 	if !chooseComparison(prompt, result, improved, score.Evaluate(improved)) {
 		return nil
 	}
 	return os.WriteFile(path, []byte(improved+"\n"), 0600)
-}
-
-func choose(prompt string, result score.Result, actions ...string) bool {
-	selected := 0
-	return raw(func() bool {
-		for {
-			clear()
-			printPrompt("Prompt", prompt)
-			screenf("\nPuan: %d/100\n", result.Score)
-			for _, criterion := range result.Criteria {
-				screenf("  %-26s %d/100\n", criterion.Name+":", criterion.Score)
-			}
-			screenln("\n↑/↓ ile seç, Enter ile onayla, Esc ile çık.")
-			printActions(actions, selected)
-			switch readKey() {
-			case "up":
-				selected = (selected + len(actions) - 1) % len(actions)
-			case "down":
-				selected = (selected + 1) % len(actions)
-			case "enter":
-				return selected == 0
-			case "esc":
-				return false
-			}
-		}
-	})
 }
 
 func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result) bool {
@@ -84,35 +58,39 @@ func chooseComparison(original string, originalScore score.Result, improved stri
 	})
 }
 
-func ask(questions []string) []string {
+func ask(questions []string) ([]string, bool) {
 	if len(questions) == 0 {
-		return nil
+		return nil, true
 	}
 	answers := make([]string, len(questions))
-	raw(func() bool {
+	complete := raw(func() bool {
 		for i, question := range questions {
 			clear()
 			screenln("Eksik bilgi", i+1, "/", len(questions))
 			screenln(question)
 			screenln("Cevabını yaz ve Enter'a bas. Backspace ile silebilirsin.")
 			screenf("> ")
-			answers[i] = readAnswer()
+			var answered bool
+			answers[i], answered = readAnswer()
+			if !answered {
+				return false
+			}
 		}
 		return true
 	})
-	return answers
+	return answers, complete
 }
 
-func readAnswer() string {
+func readAnswer() (string, bool) {
 	var answer []byte
 	for {
 		key, ok := readByte()
 		if !ok || key == 3 { // Ctrl+C
-			return strings.TrimSpace(string(answer))
+			return "", false
 		}
 		switch key {
 		case '\r', '\n':
-			return strings.TrimSpace(string(answer))
+			return strings.TrimSpace(string(answer)), true
 		case 8, 127:
 			answer = removeLastRune(answer)
 			fmt.Print("\r\033[2K")
