@@ -5,7 +5,7 @@ Terminalde AI kodlama promptlarını API anahtarı olmadan puanlar, eksik bilgi 
 ## Kurulum
 
 ```sh
-go install github.com/EyupEfeDuvarbasi/promptpatch@v0.1.0
+go install github.com/EyupEfeDuvarbasi/promptpatch@main
 ```
 
 Alternatif olarak GitHub Releases sayfasından platformunuza uygun binary'yi indirin ve PATH içindeki bir dizine koyun.
