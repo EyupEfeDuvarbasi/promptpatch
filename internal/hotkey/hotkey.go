@@ -13,6 +13,7 @@ import (
 const (
 	portalBus  = "org.freedesktop.portal.Desktop"
 	portalPath = "/org/freedesktop/portal/desktop"
+	appID      = "com.promptpatch.app"
 )
 
 func Run() error {
@@ -24,6 +25,10 @@ func Run() error {
 	signals := make(chan *dbus.Signal, 16)
 	conn.Signal(signals)
 	defer conn.RemoveSignal(signals)
+	registry := conn.Object(portalBus, dbus.ObjectPath(portalPath))
+	if err := registry.Call("org.freedesktop.host.portal.Registry.Register", 0, appID, map[string]dbus.Variant{}).Err; err != nil {
+		return err
+	}
 	for _, rule := range []string{
 		"type='signal',interface='org.freedesktop.portal.Request',member='Response'",
 		"type='signal',interface='org.freedesktop.portal.GlobalShortcuts',member='Activated'",
@@ -105,12 +110,23 @@ func Install() error {
 		return err
 	}
 	service := "[Unit]\nDescription=Promptcheck global shortcut\n\n[Service]\nExecStart=" + executable + " hotkey\nRestart=on-failure\n\n[Install]\nWantedBy=default.target\n"
-	path := filepath.Join(directory, "promptcheck-hotkey.service")
+	desktopDirectory := filepath.Join(home, ".local", "share", "applications")
+	if err := os.MkdirAll(desktopDirectory, 0700); err != nil {
+		return err
+	}
+	desktop := "[Desktop Entry]\nType=Application\nName=Promptcheck\nExec=" + executable + " gui\n"
+	if err := os.WriteFile(filepath.Join(desktopDirectory, appID+".desktop"), []byte(desktop), 0600); err != nil {
+		return err
+	}
+	serviceName := "app-" + appID + ".service"
+	path := filepath.Join(directory, serviceName)
 	if err := os.WriteFile(path, []byte(service), 0600); err != nil {
 		return err
 	}
 	if err := exec.Command("systemctl", "--user", "daemon-reload").Run(); err != nil {
 		return err
 	}
-	return exec.Command("systemctl", "--user", "enable", "--now", "promptcheck-hotkey").Run()
+	_ = exec.Command("systemctl", "--user", "disable", "--now", "promptcheck-hotkey.service").Run()
+	_ = exec.Command("systemctl", "--user", "reset-failed").Run()
+	return exec.Command("systemctl", "--user", "enable", "--now", serviceName).Run()
 }
