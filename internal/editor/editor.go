@@ -28,6 +28,8 @@ func Run(path string) error {
 	if prompt == "" {
 		return nil
 	}
+	enterAlternateScreen()
+	defer leaveAlternateScreen()
 	result := score.Evaluate(prompt)
 	questions := cli.LocalQuestions(result)
 	answers, complete := ask(questions)
@@ -210,6 +212,10 @@ func readByte() (byte, bool) {
 }
 
 func clear() { fmt.Print("\033[2J\033[H") }
+
+func enterAlternateScreen() { fmt.Print("\033[?1049h\033[2J\033[H") }
+
+func leaveAlternateScreen() { fmt.Print("\033[?1049l") }
 
 // screenf preserves line starts while the terminal is in raw input mode.
 func screenf(format string, values ...any) {
