@@ -17,6 +17,8 @@ import (
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
 
+var terminalInput = os.Stdin
+
 func Run(path string) error {
 	contents, err := os.ReadFile(path)
 	if err != nil {
@@ -153,11 +155,20 @@ func removeLastRune(value []byte) []byte {
 }
 
 func raw(run func() bool) bool {
-	state, err := term.MakeRaw(int(os.Stdin.Fd()))
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		tty = os.Stdin
+	} else {
+		defer tty.Close()
+	}
+	previousInput := terminalInput
+	terminalInput = tty
+	defer func() { terminalInput = previousInput }()
+	state, err := term.MakeRaw(int(tty.Fd()))
 	if err != nil {
 		return false
 	}
-	defer term.Restore(int(os.Stdin.Fd()), state)
+	defer term.Restore(int(tty.Fd()), state)
 	return run()
 }
 
@@ -191,7 +202,7 @@ func readKey() string {
 
 func readByte() (byte, bool) {
 	var input [1]byte
-	n, err := os.Stdin.Read(input[:])
+	n, err := terminalInput.Read(input[:])
 	return input[0], err == nil && n == 1
 }
 
