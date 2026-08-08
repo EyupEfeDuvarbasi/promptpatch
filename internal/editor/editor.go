@@ -34,6 +34,9 @@ func Run(path string) error {
 	if !complete {
 		return nil
 	}
+	clear()
+	screenln("Prompt iyileştiriliyor…")
+	screenln("Yerel model yanıtı hazırlanıyor.")
 	client, err := llm.New(llm.Ollama, "")
 	if err != nil {
 		return err
