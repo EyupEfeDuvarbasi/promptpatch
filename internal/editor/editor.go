@@ -83,12 +83,10 @@ func chooseComparison(original string, originalScore score.Result, improved stri
 	return raw(func() bool {
 		for {
 			clear()
-			printScoreSummary("Özgün", originalScore)
-			printScoreSummary("İyileştirilmiş", improvedScore)
+			budget := promptLineBudget()
+			printPrompt(scoreTitle("Özgün prompt", originalScore), original, budget)
 			screenln()
-			printPrompt("Özgün prompt", original)
-			screenln()
-			printPrompt("İyileştirilmiş prompt", improved)
+			printPrompt(scoreTitle("İyileştirilmiş prompt", improvedScore), improved, budget)
 			screenln("\n↑/↓ ile seç, Enter ile onayla, Esc ile özgünü koru.")
 			printActions([]string{"İyileştirilmiş promptu uygula", "Özgün promptu koru"}, selected)
 			switch readKey() {
@@ -236,20 +234,28 @@ func printActions(actions []string, selected int) {
 	}
 }
 
-func printPrompt(title, value string) {
+func printPrompt(title, value string, limit int) {
 	screenln(title + ":")
-	for _, line := range wrap(value, width()-2) {
+	for _, line := range promptPreview(value, width()-2, limit) {
 		screenln("  " + line)
 	}
 }
 
-func printScoreSummary(label string, result score.Result) {
+func promptPreview(value string, columns, limit int) []string {
+	lines := wrap(value, columns)
+	if len(lines) <= limit {
+		return lines
+	}
+	remaining := len(lines) - limit + 1
+	return append(lines[:limit-1], fmt.Sprintf("… (%d satır daha)", remaining))
+}
+
+func scoreTitle(label string, result score.Result) string {
 	criteria := result.Criteria
 	if len(criteria) != 5 {
-		screenln(fmt.Sprintf("%s: %d/100", label, result.Score))
-		return
+		return fmt.Sprintf("%s — %d/100", label, result.Score)
 	}
-	screenln(fmt.Sprintf("%s %d/100 — G:%d B:%d S:%d K:%d U:%d", label, result.Score, criteria[0].Score, criteria[1].Score, criteria[2].Score, criteria[3].Score, criteria[4].Score))
+	return fmt.Sprintf("%s — %d/100 | G:%d B:%d S:%d K:%d U:%d", label, result.Score, criteria[0].Score, criteria[1].Score, criteria[2].Score, criteria[3].Score, criteria[4].Score)
 }
 
 func width() int {
@@ -258,6 +264,14 @@ func width() int {
 		return 80
 	}
 	return columns
+}
+
+func promptLineBudget() int {
+	_, rows, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || rows < 18 {
+		rows = 24
+	}
+	return max(3, (rows-10)/2)
 }
 
 func wrap(value string, columns int) []string {

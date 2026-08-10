@@ -3,6 +3,8 @@ package editor
 import (
 	"strings"
 	"testing"
+
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
 
 func TestWrapDoesNotExceedColumnWidth(t *testing.T) {
@@ -51,5 +53,19 @@ func TestPlainFallbackHasNoMarkdownHeadings(t *testing.T) {
 	got := plainFallback("şunu düzelt", []string{"Hangi dosya?", "Beklenen sonuç?"}, []string{"src/parser.go", "Boş girdi hata dönsün"})
 	if strings.Contains(got, "#") || !strings.Contains(got, "Bağlam: src/parser.go") || !strings.Contains(got, "Beklenen sonuç: Boş girdi hata dönsün") {
 		t.Fatalf("fallback=%q", got)
+	}
+}
+
+func TestScoreTitleIsCompact(t *testing.T) {
+	result := score.Result{Score: 64, Criteria: []score.Criterion{{Score: 70}, {Score: 60}, {Score: 50}, {Score: 40}, {Score: 100}}}
+	if got := scoreTitle("Özgün prompt", result); got != "Özgün prompt — 64/100 | G:70 B:60 S:50 K:40 U:100" {
+		t.Fatalf("title=%q", got)
+	}
+}
+
+func TestPromptPreviewTruncatesToTerminalBudget(t *testing.T) {
+	preview := promptPreview("bir iki üç dört beş altı yedi sekiz dokuz on", 8, 3)
+	if len(preview) != 3 || !strings.HasPrefix(preview[2], "… (") {
+		t.Fatalf("preview=%q", preview)
 	}
 }
