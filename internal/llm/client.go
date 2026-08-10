@@ -127,7 +127,7 @@ func (c Client) improveOllama(ctx context.Context, prompt string, questions, ans
 	body, err := json.Marshal(map[string]any{
 		"model": c.Model, "system": ollamaRewriteRubric, "prompt": strings.Join(parts, "\n\n"),
 		"format": map[string]any{"type": "object", "properties": map[string]any{"improved_prompt": map[string]string{"type": "string"}}, "required": []string{"improved_prompt"}},
-		"stream": false, "keep_alive": "5m", "options": map[string]any{"temperature": 0, "num_predict": 300},
+		"stream": false, "keep_alive": "5m", "options": map[string]any{"temperature": 0, "num_predict": 120},
 	})
 	if err != nil {
 		return Assessment{}, err
@@ -354,7 +354,7 @@ const rubric = `Evaluate this developer prompt on five criteria from 0 to 100: c
 
 const rewriteRubric = `Girdi bir JSON nesnesidir: original_prompt ve additional_context içindeki soru-cevap çiftleri. original_prompt'u temel alanlarda puanla. additional_context bilgilerini doğal biçimde birleştirerek Türkçe, gerçekten yeniden yazılmış bir geliştirici promptu üret. Soruları veya cevapları metnin sonuna ekleme; teknik bilgi uydurma. ÇIKTI KURALLARI: questions alanı mutlaka boş dizi [] olmalı; improved_prompt mutlaka boş olmayan yeniden yazılmış prompt olmalı. improved_* alanlarında yeni promptu puanla. Yalnızca şemaya uyan JSON döndür.`
 
-const ollamaRewriteRubric = `Tek bir Türkçe geliştirici promptu yeniden yaz. Özgün görevin amacını koru; doğrulanmış bilgileri doğal cümlelere dönüştür. Soru-cevap biçimi, "soru", "cevap", "doğrulanmış bilgi" veya "ek bilgi" ifadelerini yazma. Teknik ayrıntı uydurma, çözüm veya kod verme. improved_prompt alanında yalnızca kullanıcının doğrudan kullanabileceği eksiksiz prompt yer almalı.`
+const ollamaRewriteRubric = `Tek bir Türkçe geliştirici promptu yeniden yaz. Özgün görevin amacını koru; doğrulanmış bilgileri doğal cümlelere dönüştür. En fazla dört kısa cümle yaz. Soru-cevap biçimi, "soru", "cevap", "doğrulanmış bilgi" veya "ek bilgi" ifadelerini yazma. Teknik ayrıntı uydurma, çözüm veya kod verme. improved_prompt alanında yalnızca kullanıcının doğrudan kullanabileceği eksiksiz prompt yer almalı.`
 
 func average(criteria []score.Criterion) int {
 	total := 0

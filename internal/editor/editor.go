@@ -43,12 +43,15 @@ func Run(path string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	assessment, err := client.Improve(ctx, prompt, questions, answers)
 	if err != nil {
-		showModelError(err)
-		return nil
+		improvedPrompt := cli.LocalImprove(prompt, questions, answers)
+		if !chooseComparison(prompt, result, improvedPrompt, score.Evaluate(improvedPrompt)) {
+			return nil
+		}
+		return os.WriteFile(path, []byte(improvedPrompt+"\n"), 0600)
 	}
 	original := resultFromCriteria(assessment.Criteria)
 	improved := resultFromCriteria(assessment.ImprovedCriteria)
@@ -67,20 +70,6 @@ func resultFromCriteria(criteria []score.Criterion) score.Result {
 		total += criterion.Score
 	}
 	return score.Result{Criteria: criteria, Score: total / len(criteria)}
-}
-
-func showModelError(err error) {
-	raw(func() bool {
-		clear()
-		screenln("Yerel model kullanılamıyor")
-		for _, line := range wrap(err.Error(), width()-2) {
-			screenln("  " + line)
-		}
-		screenln("\nÖzgün prompt korunuyor. Enter'a bas.")
-		for readKey() != "enter" {
-		}
-		return true
-	})
 }
 
 func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result) bool {
