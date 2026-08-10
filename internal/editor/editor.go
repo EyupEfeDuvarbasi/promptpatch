@@ -38,38 +38,46 @@ func Run(path string) error {
 	}
 	clear()
 	screenln("Prompt iyileştiriliyor…")
-	screenln("Yerel model yanıtı hazırlanıyor.")
-	client, err := llm.New(llm.Ollama, "")
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	assessment, err := client.Improve(ctx, prompt, questions, answers)
-	if err != nil {
-		improvedPrompt := cli.LocalImprove(prompt, questions, answers)
-		if !chooseComparison(prompt, result, improvedPrompt, score.Evaluate(improvedPrompt)) {
-			return nil
+	baseline := cli.LocalImprove(prompt, questions, answers)
+	improvedPrompt := baseline
+	if len(answers) > 0 {
+		screenln("Yerel model yanıtı hazırlanıyor.")
+		client, err := llm.New(llm.Ollama, "")
+		if err != nil {
+			return err
 		}
-		return os.WriteFile(path, []byte(improvedPrompt+"\n"), 0600)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		assessment, err := client.Improve(ctx, baseline, nil, nil)
+		if err == nil && usableRewrite(assessment.ImprovedPrompt, answers) {
+			improvedPrompt = assessment.ImprovedPrompt
+		}
 	}
-	original := resultFromCriteria(assessment.Criteria)
-	improved := resultFromCriteria(assessment.ImprovedCriteria)
-	if !chooseComparison(prompt, original, assessment.ImprovedPrompt, improved) {
+	improved := score.Evaluate(improvedPrompt)
+	if !chooseComparison(prompt, result, improvedPrompt, improved) {
 		return nil
 	}
-	return os.WriteFile(path, []byte(assessment.ImprovedPrompt+"\n"), 0600)
+	return os.WriteFile(path, []byte(improvedPrompt+"\n"), 0600)
 }
 
-func resultFromCriteria(criteria []score.Criterion) score.Result {
-	if len(criteria) == 0 {
-		return score.Result{}
+func usableRewrite(candidate string, answers []string) bool {
+	candidate = strings.ToLower(candidate)
+	if len(strings.Fields(candidate)) < 8 || strings.Contains(candidate, "soru:") || strings.Contains(candidate, "cevap:") {
+		return false
 	}
-	total := 0
-	for _, criterion := range criteria {
-		total += criterion.Score
+	for _, answer := range answers {
+		matched := false
+		for _, word := range strings.Fields(strings.ToLower(answer)) {
+			if len([]rune(word)) >= 4 && strings.Contains(candidate, word) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
 	}
-	return score.Result{Criteria: criteria, Score: total / len(criteria)}
+	return true
 }
 
 func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result) bool {

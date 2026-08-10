@@ -22,3 +22,10 @@ func TestEvaluatePenalizesMissingExpectedResult(t *testing.T) {
 		t.Fatalf("expected-result score: %#v", result)
 	}
 }
+
+func TestEvaluateRecognizesNaturalExpectedResult(t *testing.T) {
+	result := Evaluate("src/parser.go dosyasında boş girdi alındığında hata dönmesini sağlayın.")
+	if result.Criteria[2].Score < 65 || result.Criteria[0].Score < 70 {
+		t.Fatalf("natural prompt was underscored: %#v", result)
+	}
+}

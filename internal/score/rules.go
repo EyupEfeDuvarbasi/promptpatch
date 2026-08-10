@@ -26,8 +26,8 @@ var contextTerms = []string{
 	"bağlam", "hata", "error", "stack trace", "react", "go", "golang", "python", "node", "typescript", "javascript", "rust", "java",
 }
 var constraintTerms = []string{"yalnızca", "sadece", "değiştirme", "koru", "olmamalı", "kapsam", "must", "only", "without", "do not"}
-var outputTerms = []string{"çıktı", "format", "beklenen sonuç", "kabul kriterleri", "json", "markdown", "tablo", "liste", "test", "örnek", "example", "dönmeli", "dönsün", "olmalı"}
-var actionTerms = []string{"düzelt", "ekle", "oluştur", "güncelle", "sil", "refactor", "fix", "add", "create", "update", "remove"}
+var outputTerms = []string{"çıktı", "format", "beklenen sonuç", "kabul kriterleri", "json", "markdown", "tablo", "liste", "test", "örnek", "example", "dön", "olmalı", "oluşmasın", "doğrula"}
+var actionTerms = []string{"düzelt", "ekle", "oluştur", "güncelle", "sil", "sağla", "refactor", "fix", "add", "create", "update", "remove"}
 
 // Evaluate scores observable prompt signals. Semantic quality belongs to the LLM layer.
 func Evaluate(prompt string) Result {

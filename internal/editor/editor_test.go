@@ -37,3 +37,13 @@ func TestRemoveLastRunePreservesTurkishText(t *testing.T) {
 		t.Fatalf("answer=%q", got)
 	}
 }
+
+func TestUsableRewriteRequiresAnsweredContext(t *testing.T) {
+	answers := []string{"src/parser.go", "Boş girdi hata dönsün"}
+	if !usableRewrite("src/parser.go dosyasındaki parseInput fonksiyonunda boş girdi için hata dönsün.", answers) {
+		t.Fatal("expected rewrite to retain answers")
+	}
+	if usableRewrite("Kod kalitesini artır ve gerekli düzeltmeleri yap.", answers) {
+		t.Fatal("rewrite dropped answered context")
+	}
+}
