@@ -78,8 +78,10 @@ func chooseComparison(original string, originalScore score.Result, improved stri
 		for {
 			clear()
 			printPrompt(fmt.Sprintf("Özgün prompt — %d/100", originalScore.Score), original)
+			printCriteria(originalScore.Criteria)
 			screenln()
 			printPrompt(fmt.Sprintf("İyileştirilmiş prompt — %d/100", improvedScore.Score), improved)
+			printCriteria(improvedScore.Criteria)
 			screenln("\n↑/↓ ile seç, Enter ile onayla, Esc ile özgünü koru.")
 			printActions([]string{"İyileştirilmiş promptu uygula", "Özgün promptu koru"}, selected)
 			switch readKey() {
@@ -231,6 +233,12 @@ func printPrompt(title, value string) {
 	screenln(title + ":")
 	for _, line := range wrap(value, width()-2) {
 		screenln("  " + line)
+	}
+}
+
+func printCriteria(criteria []score.Criterion) {
+	for _, criterion := range criteria {
+		screenln(fmt.Sprintf("  %s: %d/100", criterion.Name, criterion.Score))
 	}
 }
 

@@ -285,11 +285,11 @@ func decodeAssessment(text string) (Assessment, error) {
 		return Assessment{}, fmt.Errorf("assessment returned more than two questions")
 	}
 	criteria := []score.Criterion{
-		{Name: "Netlik", Score: raw.Clarity},
-		{Name: "Spesifiklik", Score: raw.Specificity},
-		{Name: "Bağlam Yeterliliği", Score: raw.Context},
-		{Name: "Kısıtlar ve Çıktı", Score: raw.Constraints},
-		{Name: "Amaç ve Başarı Ölçütü", Score: raw.Purpose},
+		{Name: "Amaç ve Görev Netliği", Score: raw.Clarity},
+		{Name: "Bağlam ve Teknik Bilgi", Score: raw.Context},
+		{Name: "Beklenen Sonuç", Score: raw.Specificity},
+		{Name: "Kısıtlar ve Sınırlar", Score: raw.Constraints},
+		{Name: "Belirsizlik / Uygulanabilirlik", Score: raw.Purpose},
 	}
 	total := 0
 	for _, criterion := range criteria {
@@ -303,11 +303,11 @@ func decodeAssessment(text string) (Assessment, error) {
 		return assessment, nil
 	}
 	improved := []score.Criterion{
-		{Name: "Netlik", Score: raw.ImprovedClarity},
-		{Name: "Spesifiklik", Score: raw.ImprovedSpecificity},
-		{Name: "Bağlam Yeterliliği", Score: raw.ImprovedContext},
-		{Name: "Kısıtlar ve Çıktı", Score: raw.ImprovedConstraints},
-		{Name: "Amaç ve Başarı Ölçütü", Score: raw.ImprovedPurpose},
+		{Name: "Amaç ve Görev Netliği", Score: raw.ImprovedClarity},
+		{Name: "Bağlam ve Teknik Bilgi", Score: raw.ImprovedContext},
+		{Name: "Beklenen Sonuç", Score: raw.ImprovedSpecificity},
+		{Name: "Kısıtlar ve Sınırlar", Score: raw.ImprovedConstraints},
+		{Name: "Belirsizlik / Uygulanabilirlik", Score: raw.ImprovedPurpose},
 	}
 	for _, criterion := range improved {
 		if criterion.Score < 0 || criterion.Score > 100 {

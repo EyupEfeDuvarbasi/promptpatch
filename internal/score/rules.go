@@ -19,15 +19,14 @@ type Result struct {
 	NeedsClarifying bool
 }
 
-var ambiguousTerms = []string{"şunu", "bunu", "bir şekilde", "falan filan"}
+var ambiguousTerms = []string{"şunu", "bunu", "bir şekilde", "falan filan", "vs.", "vesaire"}
 var contextTerms = []string{
 	".go", ".ts", ".tsx", ".js", ".jsx", ".py", ".rs", ".java", ".rb", ".php",
 	"fonksiyon", "function", "func", "metot", "method", "sınıf", "class",
-	"bağlam", "react", "go", "golang", "python", "node", "typescript", "javascript", "rust", "java",
+	"bağlam", "hata", "error", "stack trace", "react", "go", "golang", "python", "node", "typescript", "javascript", "rust", "java",
 }
-var constraintTerms = []string{"yalnızca", "sadece", "değiştirme", "koru", "olmamalı", "must", "only", "without", "do not"}
-var outputTerms = []string{"çıktı", "format", "beklenen sonuç", "kabul kriterleri", "json", "markdown", "tablo", "liste", "test", "örnek", "example"}
-var purposeTerms = []string{"çünkü", "amac", "amaç", "böylece", "için", "so that", "because"}
+var constraintTerms = []string{"yalnızca", "sadece", "değiştirme", "koru", "olmamalı", "kapsam", "must", "only", "without", "do not"}
+var outputTerms = []string{"çıktı", "format", "beklenen sonuç", "kabul kriterleri", "json", "markdown", "tablo", "liste", "test", "örnek", "example", "dönmeli", "dönsün", "olmalı"}
 var actionTerms = []string{"düzelt", "ekle", "oluştur", "güncelle", "sil", "refactor", "fix", "add", "create", "update", "remove"}
 
 // Evaluate scores observable prompt signals. Semantic quality belongs to the LLM layer.
@@ -36,59 +35,69 @@ func Evaluate(prompt string) Result {
 	words := strings.Fields(text)
 	findings := []string{}
 
-	clarity := 100
-	if len(words) < 5 {
-		clarity -= 55
-		findings = append(findings, "Prompt beş kelimeden kısa.")
-	} else if len(words) < 10 {
-		clarity -= 25
+	action := matches(text, actionTerms) > 0
+	ambiguous := matches(text, ambiguousTerms) > 0
+	contextSignals := matches(text, contextTerms)
+	outputSignals := matches(text, outputTerms)
+	constraintSignals := matches(text, constraintTerms)
+
+	clarity := 25
+	if action {
+		clarity = 70
 	}
-	if ambiguous := matches(text, ambiguousTerms); ambiguous > 0 {
-		clarity -= ambiguous * 25
-		findings = append(findings, "Belirsiz ifade tespit edildi.")
+	if len(words) >= 5 && !ambiguous {
+		clarity += 30
+	}
+	if ambiguous {
+		clarity -= 40
+		findings = append(findings, "AI'ın tahmin yapmasına yol açan belirsiz ifade var.")
+	}
+	if !action {
+		findings = append(findings, "Yapılacak görev açıkça belirtilmemiş.")
 	}
 
-	contextSignals := matches(text, contextTerms)
-	specificity := signalScore(contextSignals)
 	context := signalScore(contextSignals)
 	if contextSignals == 0 {
-		findings = append(findings, "Dosya, fonksiyon veya teknoloji bağlamı belirtilmemiş.")
+		findings = append(findings, "Dosya, bileşen, teknoloji veya mevcut durum bağlamı belirtilmemiş.")
 	}
 
-	constraints := matches(text, constraintTerms)
-	outputs := matches(text, outputTerms)
-	format := 30
-	if constraints > 0 {
-		format += 35
-	}
-	if outputs > 0 {
-		format += 35
-	}
-	if constraints == 0 && outputs == 0 {
-		findings = append(findings, "Kısıt veya beklenen çıktı formatı belirtilmemiş.")
+	expected := signalScore(outputSignals)
+	if outputSignals == 0 {
+		findings = append(findings, "Beklenen davranış ya da kabul ölçütü belirtilmemiş.")
 	}
 
-	purpose := 35
-	if matches(text, actionTerms) > 0 {
-		purpose = 65
+	constraints := signalScore(constraintSignals)
+	if constraintSignals == 0 {
+		findings = append(findings, "Kapsam veya korunacak sınırlar belirtilmemiş.")
 	}
-	if matches(text, purposeTerms) > 0 {
-		purpose = 100
+
+	applicability := 100
+	if !action {
+		applicability -= 25
+	}
+	if ambiguous {
+		applicability -= 35
+	}
+	if contextSignals == 0 {
+		applicability -= 20
+	}
+	if outputSignals == 0 {
+		applicability -= 20
 	}
 
 	criteria := []Criterion{
-		{Name: "Netlik", Score: clamp(clarity)},
-		{Name: "Spesifiklik", Score: specificity},
-		{Name: "Bağlam Yeterliliği", Score: context},
-		{Name: "Kısıtlar ve Çıktı", Score: format},
-		{Name: "Amaç ve Başarı Ölçütü", Score: purpose},
+		{Name: "Amaç ve Görev Netliği", Score: clamp(clarity)},
+		{Name: "Bağlam ve Teknik Bilgi", Score: context},
+		{Name: "Beklenen Sonuç", Score: expected},
+		{Name: "Kısıtlar ve Sınırlar", Score: constraints},
+		{Name: "Belirsizlik / Uygulanabilirlik", Score: clamp(applicability)},
 	}
 	return Result{
 		Criteria:        criteria,
 		Findings:        findings,
 		Score:           average(criteria),
 		NeedsContext:    contextSignals == 0,
-		NeedsFormat:     constraints == 0 && outputs == 0,
+		NeedsFormat:     outputSignals == 0,
 		NeedsClarifying: len(words) < 5 || matches(text, ambiguousTerms) > 0,
 	}
 }
