@@ -38,15 +38,10 @@ func Run(path string) error {
 	}
 	clear()
 	screenln("Prompt iyileştiriliyor…")
-	baseline := cli.LocalImprove(prompt, questions, answers)
-	improvedPrompt := baseline
-	if len(answers) > 0 {
-		screenln("Yerel model yanıtı hazırlanıyor.")
-		client, err := llm.New(llm.Ollama, "")
-		if err != nil {
-			return err
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	improvedPrompt := plainFallback(prompt, questions, answers)
+	screenln("Yerel model yanıtı hazırlanıyor.")
+	if client, err := llm.New(llm.Ollama, ""); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		assessment, err := client.Improve(ctx, prompt, questions, answers)
 		if err == nil && usableRewrite(assessment.ImprovedPrompt) {
@@ -63,6 +58,24 @@ func Run(path string) error {
 func usableRewrite(candidate string) bool {
 	candidate = strings.ToLower(candidate)
 	return len(strings.Fields(candidate)) >= 8 && !strings.Contains(candidate, "#") && !strings.Contains(candidate, "soru:") && !strings.Contains(candidate, "cevap:")
+}
+
+func plainFallback(prompt string, questions, answers []string) string {
+	lines := []string{strings.TrimSpace(prompt)}
+	for i, answer := range answers {
+		if answer == "" || i >= len(questions) {
+			continue
+		}
+		label := "Ek gereksinim"
+		question := strings.ToLower(questions[i])
+		if strings.Contains(question, "dosya") || strings.Contains(question, "fonksiyon") || strings.Contains(question, "teknoloji") {
+			label = "Bağlam"
+		} else if strings.Contains(question, "davranış") || strings.Contains(question, "sonuç") || strings.Contains(question, "çıktı") || strings.Contains(question, "format") {
+			label = "Beklenen sonuç"
+		}
+		lines = append(lines, label+": "+strings.TrimSpace(answer))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result) bool {

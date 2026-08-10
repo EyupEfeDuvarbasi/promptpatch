@@ -46,3 +46,10 @@ func TestUsableRewriteRejectsRawQA(t *testing.T) {
 		t.Fatal("raw Q&A must be rejected")
 	}
 }
+
+func TestPlainFallbackHasNoMarkdownHeadings(t *testing.T) {
+	got := plainFallback("şunu düzelt", []string{"Hangi dosya?", "Beklenen sonuç?"}, []string{"src/parser.go", "Boş girdi hata dönsün"})
+	if strings.Contains(got, "#") || !strings.Contains(got, "Bağlam: src/parser.go") || !strings.Contains(got, "Beklenen sonuç: Boş girdi hata dönsün") {
+		t.Fatalf("fallback=%q", got)
+	}
+}
