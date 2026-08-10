@@ -354,7 +354,7 @@ const rubric = `Evaluate this developer prompt on five criteria from 0 to 100: c
 
 const rewriteRubric = `Girdi bir JSON nesnesidir: original_prompt ve additional_context içindeki soru-cevap çiftleri. original_prompt'u temel alanlarda puanla. additional_context bilgilerini doğal biçimde birleştirerek Türkçe, gerçekten yeniden yazılmış bir geliştirici promptu üret. Soruları veya cevapları metnin sonuna ekleme; teknik bilgi uydurma. ÇIKTI KURALLARI: questions alanı mutlaka boş dizi [] olmalı; improved_prompt mutlaka boş olmayan yeniden yazılmış prompt olmalı. improved_* alanlarında yeni promptu puanla. Yalnızca şemaya uyan JSON döndür.`
 
-const ollamaRewriteRubric = `Tek bir Türkçe geliştirici promptu yeniden yaz. Özgün görevin amacını koru; doğrulanmış bilgileri doğal cümlelere dönüştür. En fazla dört kısa cümle yaz. Soru-cevap biçimi, "soru", "cevap", "doğrulanmış bilgi" veya "ek bilgi" ifadelerini yazma. Teknik ayrıntı uydurma, çözüm veya kod verme. improved_prompt alanında yalnızca kullanıcının doğrudan kullanabileceği eksiksiz prompt yer almalı.`
+const ollamaRewriteRubric = `Tek bir Türkçe geliştirici promptu yeniden yaz. Girdideki her doğrulanmış bilgi zorunludur; hiçbirini atlama veya özetleyip zayıflatma. Bilgileri tek, doğrudan kullanılabilir görev promptuna doğal biçimde birleştir. En fazla dört kısa cümle yaz. Markdown başlığı (#), madde işareti, soru-cevap biçimi ve "soru", "cevap", "doğrulanmış bilgi" veya "ek bilgi" ifadelerini kullanma. Teknik ayrıntı uydurma, çözüm veya kod verme. improved_prompt alanında yalnızca prompt yer almalı.`
 
 func average(criteria []score.Criterion) int {
 	total := 0

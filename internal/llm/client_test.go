@@ -142,6 +142,9 @@ func TestLiveOllamaRewrite(t *testing.T) {
 	if strings.Contains(assessment.ImprovedPrompt, "Soru:") || strings.Contains(assessment.ImprovedPrompt, "Cevap:") {
 		t.Fatalf("raw Q&A leaked into rewrite: %q", assessment.ImprovedPrompt)
 	}
+	if strings.Contains(assessment.ImprovedPrompt, "#") {
+		t.Fatalf("markdown structure leaked into rewrite: %q", assessment.ImprovedPrompt)
+	}
 }
 
 func TestAPIMessage(t *testing.T) {

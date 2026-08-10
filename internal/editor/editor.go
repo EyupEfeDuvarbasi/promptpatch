@@ -48,8 +48,8 @@ func Run(path string) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		assessment, err := client.Improve(ctx, baseline, nil, nil)
-		if err == nil && usableRewrite(assessment.ImprovedPrompt, answers) {
+		assessment, err := client.Improve(ctx, prompt, questions, answers)
+		if err == nil && usableRewrite(assessment.ImprovedPrompt) {
 			improvedPrompt = assessment.ImprovedPrompt
 		}
 	}
@@ -60,24 +60,9 @@ func Run(path string) error {
 	return os.WriteFile(path, []byte(improvedPrompt+"\n"), 0600)
 }
 
-func usableRewrite(candidate string, answers []string) bool {
+func usableRewrite(candidate string) bool {
 	candidate = strings.ToLower(candidate)
-	if len(strings.Fields(candidate)) < 8 || strings.Contains(candidate, "soru:") || strings.Contains(candidate, "cevap:") {
-		return false
-	}
-	for _, answer := range answers {
-		matched := false
-		for _, word := range strings.Fields(strings.ToLower(answer)) {
-			if len([]rune(word)) >= 4 && strings.Contains(candidate, word) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return false
-		}
-	}
-	return true
+	return len(strings.Fields(candidate)) >= 8 && !strings.Contains(candidate, "#") && !strings.Contains(candidate, "soru:") && !strings.Contains(candidate, "cevap:")
 }
 
 func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result) bool {
@@ -85,11 +70,12 @@ func chooseComparison(original string, originalScore score.Result, improved stri
 	return raw(func() bool {
 		for {
 			clear()
-			printPrompt(fmt.Sprintf("Özgün prompt — %d/100", originalScore.Score), original)
-			printCriteria(originalScore.Criteria)
+			printScoreSummary("Özgün", originalScore)
+			printScoreSummary("İyileştirilmiş", improvedScore)
 			screenln()
-			printPrompt(fmt.Sprintf("İyileştirilmiş prompt — %d/100", improvedScore.Score), improved)
-			printCriteria(improvedScore.Criteria)
+			printPrompt("Özgün prompt", original)
+			screenln()
+			printPrompt("İyileştirilmiş prompt", improved)
 			screenln("\n↑/↓ ile seç, Enter ile onayla, Esc ile özgünü koru.")
 			printActions([]string{"İyileştirilmiş promptu uygula", "Özgün promptu koru"}, selected)
 			switch readKey() {
@@ -244,10 +230,13 @@ func printPrompt(title, value string) {
 	}
 }
 
-func printCriteria(criteria []score.Criterion) {
-	for _, criterion := range criteria {
-		screenln(fmt.Sprintf("  %s: %d/100", criterion.Name, criterion.Score))
+func printScoreSummary(label string, result score.Result) {
+	criteria := result.Criteria
+	if len(criteria) != 5 {
+		screenln(fmt.Sprintf("%s: %d/100", label, result.Score))
+		return
 	}
+	screenln(fmt.Sprintf("%s %d/100 — G:%d B:%d S:%d K:%d U:%d", label, result.Score, criteria[0].Score, criteria[1].Score, criteria[2].Score, criteria[3].Score, criteria[4].Score))
 }
 
 func width() int {
