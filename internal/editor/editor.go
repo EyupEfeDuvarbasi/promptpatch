@@ -38,16 +38,21 @@ func Run(path string) error {
 	}
 	clear()
 	screenln("Prompt iyileştiriliyor…")
-	improvedPrompt := plainFallback(prompt, questions, answers)
 	screenln("Yerel model yanıtı hazırlanıyor.")
-	if client, err := llm.New(llm.Ollama, ""); err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		assessment, err := client.Improve(ctx, prompt, questions, answers)
-		if err == nil && usableRewrite(assessment.ImprovedPrompt) {
-			improvedPrompt = assessment.ImprovedPrompt
-		}
+	client, err := llm.New(llm.Ollama, "")
+	if err != nil {
+		return rewriteFailed(err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	assessment, err := client.Improve(ctx, prompt, questions, answers)
+	if err != nil || !usableRewrite(prompt, assessment.ImprovedPrompt) {
+		if err == nil {
+			err = fmt.Errorf("yerel model güvenilir bir yeniden yazım üretmedi")
+		}
+		return rewriteFailed(err)
+	}
+	improvedPrompt := assessment.ImprovedPrompt
 	improved := score.Evaluate(improvedPrompt)
 	if !chooseComparison(prompt, result, improvedPrompt, improved) {
 		return nil
@@ -55,27 +60,22 @@ func Run(path string) error {
 	return os.WriteFile(path, []byte(improvedPrompt+"\n"), 0600)
 }
 
-func usableRewrite(candidate string) bool {
+func usableRewrite(original, candidate string) bool {
 	candidate = strings.ToLower(candidate)
-	return len(strings.Fields(candidate)) >= 8 && !strings.Contains(candidate, "#") && !strings.Contains(candidate, "soru:") && !strings.Contains(candidate, "cevap:")
+	return len(strings.Fields(candidate)) >= 8 && normalizePrompt(original) != normalizePrompt(candidate) && !strings.Contains(candidate, "#") && !strings.Contains(candidate, "soru:") && !strings.Contains(candidate, "cevap:")
 }
 
-func plainFallback(prompt string, questions, answers []string) string {
-	lines := []string{strings.TrimSpace(prompt)}
-	for i, answer := range answers {
-		if answer == "" || i >= len(questions) {
-			continue
-		}
-		label := "Ek gereksinim"
-		question := strings.ToLower(questions[i])
-		if strings.Contains(question, "dosya") || strings.Contains(question, "fonksiyon") || strings.Contains(question, "teknoloji") {
-			label = "Bağlam"
-		} else if strings.Contains(question, "davranış") || strings.Contains(question, "sonuç") || strings.Contains(question, "çıktı") || strings.Contains(question, "format") {
-			label = "Beklenen sonuç"
-		}
-		lines = append(lines, label+": "+strings.TrimSpace(answer))
-	}
-	return strings.Join(lines, "\n")
+func normalizePrompt(value string) string {
+	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
+}
+
+func rewriteFailed(err error) error {
+	clear()
+	screenln("İyileştirme güvenilir biçimde üretilemedi; özgün prompt korunuyor.")
+	screenln(err)
+	screenln("Enter veya Esc ile geri dön.")
+	raw(func() bool { _ = readKey(); return true })
+	return nil
 }
 
 func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result) bool {
@@ -83,10 +83,11 @@ func chooseComparison(original string, originalScore score.Result, improved stri
 	return raw(func() bool {
 		for {
 			clear()
+			printScoreSummary(originalScore, improvedScore)
 			budget := promptLineBudget()
-			printPrompt(scoreTitle("Özgün prompt", originalScore), original, budget)
+			printPrompt("Özgün prompt", original, budget)
 			screenln()
-			printPrompt(scoreTitle("İyileştirilmiş prompt", improvedScore), improved, budget)
+			printPrompt("İyileştirilmiş prompt", improved, budget)
 			screenln("\n↑/↓ ile seç, Enter ile onayla, Esc ile özgünü koru.")
 			printActions([]string{"İyileştirilmiş promptu uygula", "Özgün promptu koru"}, selected)
 			switch readKey() {
@@ -250,12 +251,17 @@ func promptPreview(value string, columns, limit int) []string {
 	return append(lines[:limit-1], fmt.Sprintf("… (%d satır daha)", remaining))
 }
 
-func scoreTitle(label string, result score.Result) string {
-	criteria := result.Criteria
-	if len(criteria) != 5 {
-		return fmt.Sprintf("%s — %d/100", label, result.Score)
+func printScoreSummary(original, improved score.Result) {
+	screenln("Puanlar: G görev · B bağlam · S sonuç · K kısıt · U uygulanabilirlik")
+	screenln(scoreLine("Özgün", original))
+	screenln(scoreLine("İyileştirilmiş", improved))
+}
+
+func scoreLine(label string, result score.Result) string {
+	if len(result.Criteria) != 5 {
+		return fmt.Sprintf("%s: %d/100", label, result.Score)
 	}
-	return fmt.Sprintf("%s — %d/100 | G:%d B:%d S:%d K:%d U:%d", label, result.Score, criteria[0].Score, criteria[1].Score, criteria[2].Score, criteria[3].Score, criteria[4].Score)
+	return fmt.Sprintf("%s: %d/100  G%d B%d S%d K%d U%d", label, result.Score, result.Criteria[0].Score, result.Criteria[1].Score, result.Criteria[2].Score, result.Criteria[3].Score, result.Criteria[4].Score)
 }
 
 func width() int {
@@ -271,7 +277,7 @@ func promptLineBudget() int {
 	if err != nil || rows < 18 {
 		rows = 24
 	}
-	return max(3, (rows-10)/2)
+	return max(3, (rows-13)/2)
 }
 
 func wrap(value string, columns int) []string {

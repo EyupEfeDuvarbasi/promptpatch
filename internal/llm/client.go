@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
@@ -124,17 +126,38 @@ func (c Client) improveOllama(ctx context.Context, prompt string, questions, ans
 			parts = append(parts, "Doğrulanmış bilgi ("+questions[i]+"): "+answer)
 		}
 	}
-	body, err := json.Marshal(map[string]any{
-		"model": c.Model, "system": ollamaRewriteRubric, "prompt": strings.Join(parts, "\n\n"),
-		"format": map[string]any{"type": "object", "properties": map[string]any{"improved_prompt": map[string]string{"type": "string"}}, "required": []string{"improved_prompt"}},
-		"stream": false, "keep_alive": "5m", "options": map[string]any{"temperature": 0, "num_predict": 120},
-	})
+	required := requiredFacts(prompt, answers)
+	input := strings.Join(parts, "\n\n")
+	if len(required) > 0 {
+		input += "\n\nYeni promptta aynen bulunması zorunlu ifadeler: " + quoteFacts(required)
+	}
+	rewritten, err := c.ollamaRewrite(ctx, input)
 	if err != nil {
 		return Assessment{}, err
 	}
+	if !genuineRewrite(prompt, rewritten) {
+		return Assessment{}, fmt.Errorf("yerel model özgün promptu yeniden yazmadı")
+	}
+	if missing := missingFacts(rewritten, required); len(missing) > 0 {
+		rewritten = addMissingFacts(rewritten, missing, answers)
+	}
+	original := score.Evaluate(prompt)
+	improved := score.Evaluate(rewritten)
+	return Assessment{Criteria: original.Criteria, Score: original.Score, ImprovedPrompt: rewritten, ImprovedCriteria: improved.Criteria, ImprovedScore: improved.Score}, nil
+}
+
+func (c Client) ollamaRewrite(ctx context.Context, input string) (string, error) {
+	body, err := json.Marshal(map[string]any{
+		"model": c.Model, "system": ollamaRewriteRubric, "prompt": input,
+		"format": map[string]any{"type": "object", "properties": map[string]any{"improved_prompt": map[string]string{"type": "string"}}, "required": []string{"improved_prompt"}},
+		"stream": false, "keep_alive": "5m", "options": map[string]any{"temperature": 0, "num_predict": 220},
+	})
+	if err != nil {
+		return "", err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewReader(body))
 	if err != nil {
-		return Assessment{}, err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := c.HTTPClient
@@ -143,15 +166,15 @@ func (c Client) improveOllama(ctx context.Context, prompt string, questions, ans
 	}
 	res, err := client.Do(req)
 	if err != nil {
-		return Assessment{}, err
+		return "", err
 	}
 	defer res.Body.Close()
 	responseBody, err := io.ReadAll(res.Body)
 	if err != nil {
-		return Assessment{}, err
+		return "", err
 	}
 	if res.StatusCode < http.StatusOK || res.StatusCode >= http.StatusMultipleChoices {
-		return Assessment{}, fmt.Errorf("Ollama API returned %s: %s", res.Status, apiMessage(responseBody))
+		return "", fmt.Errorf("Ollama API returned %s: %s", res.Status, apiMessage(responseBody))
 	}
 	var response struct {
 		Response string `json:"response"`
@@ -160,17 +183,114 @@ func (c Client) improveOllama(ctx context.Context, prompt string, questions, ans
 		ImprovedPrompt string `json:"improved_prompt"`
 	}
 	if err := json.Unmarshal(responseBody, &response); err != nil {
-		return Assessment{}, fmt.Errorf("yerel model yanıtı çözümlenemedi: %w", err)
+		return "", fmt.Errorf("yerel model yanıtı çözümlenemedi: %w", err)
 	}
 	if err := json.Unmarshal([]byte(response.Response), &rewritten); err != nil {
-		return Assessment{}, fmt.Errorf("yerel model yanıtı çözümlenemedi")
+		return "", fmt.Errorf("yerel model yanıtı çözümlenemedi")
 	}
-	if strings.TrimSpace(rewritten.ImprovedPrompt) == "" {
-		return Assessment{}, fmt.Errorf("yerel model iyileştirilmiş prompt üretmedi")
+	improvedPrompt := strings.TrimSpace(rewritten.ImprovedPrompt)
+	if improvedPrompt == "" {
+		return "", fmt.Errorf("yerel model iyileştirilmiş prompt üretmedi")
 	}
-	original := score.Evaluate(prompt)
-	improved := score.Evaluate(rewritten.ImprovedPrompt)
-	return Assessment{Criteria: original.Criteria, Score: original.Score, ImprovedPrompt: strings.TrimSpace(rewritten.ImprovedPrompt), ImprovedCriteria: improved.Criteria, ImprovedScore: improved.Score}, nil
+	return improvedPrompt, nil
+}
+
+var wordPattern = regexp.MustCompile(`[\p{L}\p{N}_./-]+`)
+
+// requiredFacts keeps concrete model names, numbers, units and answered details from being lost in a rewrite.
+func requiredFacts(prompt string, answers []string) []string {
+	facts := make([]string, 0, len(answers)+4)
+	for _, answer := range answers {
+		if answer = strings.TrimSpace(answer); answer != "" {
+			facts = append(facts, answer)
+		}
+	}
+	words := wordPattern.FindAllString(prompt, -1)
+	for i, word := range words {
+		if !containsDigit(word) {
+			continue
+		}
+		fact := word
+		if i >= 3 && i+1 < len(words) && isUnit(words[i+1]) {
+			fact = strings.Join(words[i-3:i+2], " ")
+		}
+		facts = append(facts, fact)
+	}
+	return uniqueFacts(facts)
+}
+
+func isUnit(value string) bool {
+	switch strings.ToLower(value) {
+	case "kb", "mb", "gb", "tb", "hz", "fps", "ms", "px":
+		return true
+	}
+	return false
+}
+
+func containsDigit(value string) bool {
+	for _, r := range value {
+		if unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueFacts(facts []string) []string {
+	seen := make(map[string]bool, len(facts))
+	result := make([]string, 0, len(facts))
+	for _, fact := range facts {
+		key := strings.ToLower(strings.TrimSpace(fact))
+		if key != "" && !seen[key] {
+			seen[key] = true
+			result = append(result, strings.TrimSpace(fact))
+		}
+	}
+	return result
+}
+
+func quoteFacts(facts []string) string {
+	quoted := make([]string, len(facts))
+	for i, fact := range facts {
+		quoted[i] = `"` + fact + `"`
+	}
+	return strings.Join(quoted, ", ")
+}
+
+func missingFacts(candidate string, required []string) []string {
+	candidate = strings.ToLower(candidate)
+	missing := make([]string, 0)
+	for _, fact := range required {
+		if !strings.Contains(candidate, strings.ToLower(fact)) {
+			missing = append(missing, fact)
+		}
+	}
+	return missing
+}
+
+func genuineRewrite(original, candidate string) bool {
+	original = normalizeText(original)
+	candidate = normalizeText(candidate)
+	return candidate != "" && candidate != original && !strings.HasPrefix(candidate, original)
+}
+
+func normalizeText(value string) string {
+	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
+}
+
+func addMissingFacts(prompt string, missing, answers []string) string {
+	answer := make(map[string]bool, len(answers))
+	for _, value := range answers {
+		answer[strings.ToLower(strings.TrimSpace(value))] = true
+	}
+	for _, fact := range missing {
+		if answer[strings.ToLower(fact)] {
+			prompt += " Çıktıyı " + fact + " olarak sun."
+		} else {
+			prompt += " Şu somut gereksinimi koru: " + fact + "."
+		}
+	}
+	return prompt
 }
 
 func (c Client) assess(ctx context.Context, input, instructions string) (Assessment, error) {
@@ -354,7 +474,7 @@ const rubric = `Evaluate this developer prompt on five criteria from 0 to 100: c
 
 const rewriteRubric = `Girdi bir JSON nesnesidir: original_prompt ve additional_context içindeki soru-cevap çiftleri. original_prompt'u temel alanlarda puanla. additional_context bilgilerini doğal biçimde birleştirerek Türkçe, gerçekten yeniden yazılmış bir geliştirici promptu üret. Soruları veya cevapları metnin sonuna ekleme; teknik bilgi uydurma. ÇIKTI KURALLARI: questions alanı mutlaka boş dizi [] olmalı; improved_prompt mutlaka boş olmayan yeniden yazılmış prompt olmalı. improved_* alanlarında yeni promptu puanla. Yalnızca şemaya uyan JSON döndür.`
 
-const ollamaRewriteRubric = `Tek bir Türkçe geliştirici promptu yeniden yaz. Girdideki her doğrulanmış bilgi zorunludur; hiçbirini atlama veya özetleyip zayıflatma. Bilgileri tek, doğrudan kullanılabilir görev promptuna doğal biçimde birleştir. En fazla dört kısa cümle yaz. Markdown başlığı (#), madde işareti, soru-cevap biçimi ve "soru", "cevap", "doğrulanmış bilgi" veya "ek bilgi" ifadelerini kullanma. Teknik ayrıntı uydurma, çözüm veya kod verme. improved_prompt alanında yalnızca prompt yer almalı.`
+const ollamaRewriteRubric = `Bu bir PROMPT DÜZENLEME işlemidir. Girdideki görevi çözme, araştırma yapma veya plan üretme. Yalnızca kullanıcının başka bir AI'a göndereceği yeniden yazılmış istek metnini üret. "Zorunlu ifadeler" verildiyse her birini harf harfine koru. Özgün görevdeki somut adları, sayıları, birimleri, teknolojileri, dosya adlarını ve kullanıcı cevaplarını asla çıkarma veya genelleştirme. Görevi doğal ve doğrudan uygulanabilir biçimde düzenle. Markdown başlığı (#), madde işareti, soru-cevap biçimi, açıklama, çözüm veya kod yazma. Teknik ayrıntı uydurma. improved_prompt alanında yalnızca prompt yer almalı.`
 
 func average(criteria []score.Criterion) int {
 	total := 0

@@ -96,6 +96,21 @@ func TestOllamaImproveReturnsRewrite(t *testing.T) {
 	}
 }
 
+func TestRequiredFactsPreserveAnswersAndTechnicalNumbers(t *testing.T) {
+	facts := requiredFacts("jetson orin nano 8 gb üzerinde 10 kamera ve 20 fps hedefle", []string{"md dosyası"})
+	for _, want := range []string{"md dosyası", "jetson orin nano 8 gb", "10", "20"} {
+		if !strings.Contains(strings.Join(facts, "|"), want) {
+			t.Fatalf("facts=%q, missing %q", facts, want)
+		}
+	}
+	if !genuineRewrite("şunu düzelt", "src/parser.go için boş girdi hatasını düzelt.") {
+		t.Fatal("rewrite should be genuine")
+	}
+	if genuineRewrite("şunu düzelt", "şunu düzelt. md dosyası") {
+		t.Fatal("an appended answer is not a rewrite")
+	}
+}
+
 func TestLiveProviders(t *testing.T) {
 	if os.Getenv("PROMPTCHECK_LIVE") != "1" {
 		t.Skip("set PROMPTCHECK_LIVE=1 to call provider APIs")
