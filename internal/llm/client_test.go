@@ -96,6 +96,15 @@ func TestOllamaImproveReturnsRewrite(t *testing.T) {
 	}
 }
 
+func TestParseOllamaRewriteAcceptsRawMarkdown(t *testing.T) {
+	if got := parseOllamaRewrite("```markdown\n## Görev\nParserı düzelt.\n```"); got != "## Görev\nParserı düzelt." {
+		t.Fatalf("rewrite=%q", got)
+	}
+	if got := parseOllamaRewrite(`{"improved_prompt":"Parserı düzelt."}`); got != "Parserı düzelt." {
+		t.Fatalf("rewrite=%q", got)
+	}
+}
+
 func TestRequiredFactsPreserveAnswersAndTechnicalNumbers(t *testing.T) {
 	facts := requiredFacts("jetson orin nano 8 gb üzerinde 10 kamera ve 20 fps hedefle", []string{"md dosyası"})
 	for _, want := range []string{"md dosyası", "jetson orin nano 8 gb", "10", "20"} {

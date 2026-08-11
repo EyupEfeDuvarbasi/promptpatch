@@ -150,7 +150,6 @@ func (c Client) improveOllama(ctx context.Context, prompt string, questions, ans
 func (c Client) ollamaRewrite(ctx context.Context, input string) (string, error) {
 	body, err := json.Marshal(map[string]any{
 		"model": c.Model, "system": ollamaRewriteRubric, "prompt": input,
-		"format": map[string]any{"type": "object", "properties": map[string]any{"improved_prompt": map[string]string{"type": "string"}}, "required": []string{"improved_prompt"}},
 		"stream": false, "keep_alive": "5m", "options": map[string]any{"temperature": 0, "num_predict": 320},
 	})
 	if err != nil {
@@ -180,20 +179,29 @@ func (c Client) ollamaRewrite(ctx context.Context, input string) (string, error)
 	var response struct {
 		Response string `json:"response"`
 	}
-	var rewritten struct {
-		ImprovedPrompt string `json:"improved_prompt"`
-	}
 	if err := json.Unmarshal(responseBody, &response); err != nil {
 		return "", fmt.Errorf("yerel model yanıtı çözümlenemedi: %w", err)
 	}
-	if err := json.Unmarshal([]byte(response.Response), &rewritten); err != nil {
-		return "", fmt.Errorf("yerel model yanıtı çözümlenemedi")
-	}
-	improvedPrompt := strings.TrimSpace(rewritten.ImprovedPrompt)
+	improvedPrompt := parseOllamaRewrite(response.Response)
 	if improvedPrompt == "" {
 		return "", fmt.Errorf("yerel model iyileştirilmiş prompt üretmedi")
 	}
 	return improvedPrompt, nil
+}
+
+func parseOllamaRewrite(response string) string {
+	var wrapped struct {
+		ImprovedPrompt string `json:"improved_prompt"`
+	}
+	if json.Unmarshal([]byte(response), &wrapped) == nil && strings.TrimSpace(wrapped.ImprovedPrompt) != "" {
+		return strings.TrimSpace(wrapped.ImprovedPrompt)
+	}
+	response = strings.TrimSpace(response)
+	response = strings.TrimPrefix(response, "```markdown")
+	response = strings.TrimPrefix(response, "```md")
+	response = strings.TrimPrefix(response, "```")
+	response = strings.TrimSuffix(response, "```")
+	return strings.TrimSpace(response)
 }
 
 var (
@@ -574,7 +582,7 @@ Yalnızca aşağıdaki Markdown yapısında, kısa ve doğrudan bir prompt yaz. 
 ## Başarı ölçütleri
 ## Teslimat
 
-Soru-cevap biçimi, açıklama, çözüm veya kod yazma. improved_prompt alanında yalnızca bu prompt yer almalı.`
+Soru-cevap biçimi, açıklama, çözüm veya kod yazma. Doğrudan bu promptu döndür; JSON veya kod bloğu kullanma.`
 
 func average(criteria []score.Criterion) int {
 	total := 0
