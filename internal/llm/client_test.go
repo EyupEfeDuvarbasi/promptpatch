@@ -111,6 +111,36 @@ func TestRequiredFactsPreserveAnswersAndTechnicalNumbers(t *testing.T) {
 	}
 }
 
+func TestPreserveConstraintsKeepsOpposedRulesSeparate(t *testing.T) {
+	source := "önceki kodlardan referans almadan ve açık kaynak kodlardan yararlanarak fazlara böl, agile mantığında her faz sonunda görünür sonuç sun"
+	modelOutput := "## Görev\nAçık kaynak kodlarından yola çıkarak plan hazırla.\n\n## Kısıtlar\n- Açık kaynak kullanma.\n\n## Teslimat\nmd dosyası"
+	got := preserveConstraints(source, modelOutput)
+	for _, want := range []string{"Önceki kodları referans alma.", "Açık kaynak kodlardan yararlan.", "Çözümü aşamalara böl.", "Agile yaklaşımı izle.", "Her aşamanın sonunda görünür ve doğrulanabilir bir sonuç sun."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rewrite=%q, missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "Açık kaynak kullanma") || strings.Contains(got, "Açık kaynak kodlarından yola") || !strings.Contains(got, "## Görev\nplan hazırla") {
+		t.Fatalf("contradictory source use remains: %q", got)
+	}
+}
+
+func TestSourceConstraintsToleratesTurkishTyping(t *testing.T) {
+	got := strings.Join(sourceConstraints("onceki kodlardan referans almadan ve acik kaynak kodlardan yaralaranka fazlara bol"), "|")
+	for _, want := range []string{"Önceki kodları referans alma.", "Açık kaynak kodlardan yararlan.", "Çözümü aşamalara böl."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("constraints=%q, missing %q", got, want)
+		}
+	}
+}
+
+func TestPreserveConstraintsRemovesUnsupportedCapacityType(t *testing.T) {
+	got := preserveConstraints("jetson orin nano 8 gb üzerinde plan hazırla", "## Bağlam\nJetson Orin Nano 8 GB disk kapasitesi kullan.")
+	if strings.Contains(strings.ToLower(got), "disk") || !strings.Contains(got, "8 GB") {
+		t.Fatalf("rewrite=%q", got)
+	}
+}
+
 func TestLiveProviders(t *testing.T) {
 	if os.Getenv("PROMPTCHECK_LIVE") != "1" {
 		t.Skip("set PROMPTCHECK_LIVE=1 to call provider APIs")
@@ -154,11 +184,36 @@ func TestLiveOllamaRewrite(t *testing.T) {
 	if !strings.Contains(assessment.ImprovedPrompt, "src/parser.go") || !strings.Contains(strings.ToLower(assessment.ImprovedPrompt), "boş") {
 		t.Fatalf("context missing from rewrite: %q", assessment.ImprovedPrompt)
 	}
-	if strings.Contains(assessment.ImprovedPrompt, "Soru:") || strings.Contains(assessment.ImprovedPrompt, "Cevap:") {
+	if strings.Contains(assessment.ImprovedPrompt, "Soru:") || strings.Contains(assessment.ImprovedPrompt, "Cevap:") || strings.Contains(assessment.ImprovedPrompt, "Doğrulanmış bilgi") {
 		t.Fatalf("raw Q&A leaked into rewrite: %q", assessment.ImprovedPrompt)
 	}
-	if strings.Contains(assessment.ImprovedPrompt, "#") {
-		t.Fatalf("markdown structure leaked into rewrite: %q", assessment.ImprovedPrompt)
+	if !strings.Contains(assessment.ImprovedPrompt, "## Görev") {
+		t.Fatalf("structured prompt missing: %q", assessment.ImprovedPrompt)
+	}
+}
+
+func TestLiveOllamaPreservesOpposedConstraints(t *testing.T) {
+	if os.Getenv("PROMPTCHECK_OLLAMA") != "1" {
+		t.Skip("set PROMPTCHECK_OLLAMA=1 to call the local model")
+	}
+	client, err := New(Ollama, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	assessment, err := client.Improve(ctx, "önceki kodlardan referans almadan ve açık kaynak kodlardan yararlanarak Jetson Orin Nano 8 GB üzerinde 10 kameradan gelen videoyu aynı anda işleyecek, her kamera için 20 FPS hedefleyen aşamalı bir plan hazırla.", []string{"Beklenen davranış veya çıktı formatı nedir?"}, []string{"md dosyası"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := strings.ToLower(assessment.ImprovedPrompt)
+	for _, want := range []string{"önceki kod", "açık kaynak", "yararlan", "jetson orin nano 8 gb", "10", "20", "md dosyası"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("rewrite=%q, missing %q", assessment.ImprovedPrompt, want)
+		}
+	}
+	if strings.Contains(output, "ram") {
+		t.Fatalf("unsupported technical assumption in rewrite: %q", assessment.ImprovedPrompt)
 	}
 }
 

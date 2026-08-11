@@ -49,6 +49,13 @@ func TestUsableRewriteRejectsRawQA(t *testing.T) {
 	}
 }
 
+func TestUsableRewriteAllowsStructuredPrompt(t *testing.T) {
+	candidate := "## Görev\nsrc/parser.go içindeki parseInput fonksiyonunda boş girdi hatasını düzelt.\n\n## Başarı ölçütleri\nBoş girdi hata döndürmeli."
+	if !usableRewrite("şunu düzelt", candidate) {
+		t.Fatal("structured prompt should be usable")
+	}
+}
+
 func TestScoreLineIsCompact(t *testing.T) {
 	result := score.Result{Score: 64, Criteria: []score.Criterion{{Score: 70}, {Score: 60}, {Score: 50}, {Score: 40}, {Score: 100}}}
 	if got := scoreLine("Özgün", result); got != "Özgün: 64/100  G70 B60 S50 K40 U100" {

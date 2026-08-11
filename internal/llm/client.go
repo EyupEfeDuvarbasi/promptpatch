@@ -138,6 +138,7 @@ func (c Client) improveOllama(ctx context.Context, prompt string, questions, ans
 	if !genuineRewrite(prompt, rewritten) {
 		return Assessment{}, fmt.Errorf("yerel model özgün promptu yeniden yazmadı")
 	}
+	rewritten = preserveConstraints(prompt, rewritten)
 	if missing := missingFacts(rewritten, required); len(missing) > 0 {
 		rewritten = addMissingFacts(rewritten, missing, answers)
 	}
@@ -150,7 +151,7 @@ func (c Client) ollamaRewrite(ctx context.Context, input string) (string, error)
 	body, err := json.Marshal(map[string]any{
 		"model": c.Model, "system": ollamaRewriteRubric, "prompt": input,
 		"format": map[string]any{"type": "object", "properties": map[string]any{"improved_prompt": map[string]string{"type": "string"}}, "required": []string{"improved_prompt"}},
-		"stream": false, "keep_alive": "5m", "options": map[string]any{"temperature": 0, "num_predict": 220},
+		"stream": false, "keep_alive": "5m", "options": map[string]any{"temperature": 0, "num_predict": 320},
 	})
 	if err != nil {
 		return "", err
@@ -195,7 +196,10 @@ func (c Client) ollamaRewrite(ctx context.Context, input string) (string, error)
 	return improvedPrompt, nil
 }
 
-var wordPattern = regexp.MustCompile(`[\p{L}\p{N}_./-]+`)
+var (
+	wordPattern         = regexp.MustCompile(`[\p{L}\p{N}_./-]+`)
+	capacityTypePattern = regexp.MustCompile(`(?i)(\d+\s*(?:kb|mb|gb|tb))\s+(?:ram|bellek|hafıza|disk(?:\s+kapasitesi)?|depolama(?:\s+kapasitesi)?)`)
+)
 
 // requiredFacts keeps concrete model names, numbers, units and answered details from being lost in a rewrite.
 func requiredFacts(prompt string, answers []string) []string {
@@ -291,6 +295,89 @@ func addMissingFacts(prompt string, missing, answers []string) string {
 		}
 	}
 	return prompt
+}
+
+// preserveConstraints keeps explicit user constraints out of the model's paraphrasing path.
+func preserveConstraints(source, rewritten string) string {
+	constraints := sourceConstraints(source)
+	if len(constraints) == 0 {
+		return removeUnsupportedCapacityTypes(source, strings.ReplaceAll(rewritten, "Doğrulanmış bilgi ", ""))
+	}
+	lines := strings.Split(strings.ReplaceAll(rewritten, "Doğrulanmış bilgi ", ""), "\n")
+	sourceText := foldTurkish(source)
+	for i, line := range lines {
+		lower := foldTurkish(line)
+		if strings.Contains(sourceText, "acik kaynak") && strings.Contains(sourceText, "yara") && strings.Contains(lower, "acik kaynak") && !strings.Contains(lower, "yararlan") {
+			lines[i] = removeOpenSourceLead(line)
+		}
+	}
+	return removeUnsupportedCapacityTypes(source, replaceSection(strings.Join(lines, "\n"), "Kısıtlar", bulletList(constraints)))
+}
+
+func removeUnsupportedCapacityTypes(source, rewritten string) string {
+	source = foldTurkish(source)
+	if strings.Contains(source, "ram") || strings.Contains(source, "bellek") || strings.Contains(source, "hafiza") || strings.Contains(source, "disk") || strings.Contains(source, "depolama") {
+		return rewritten
+	}
+	return capacityTypePattern.ReplaceAllString(rewritten, "$1")
+}
+
+func removeOpenSourceLead(line string) string {
+	lower := strings.ToLower(line)
+	marker := "yola çıkarak"
+	if end := strings.Index(lower, marker); end >= 0 {
+		return strings.TrimSpace(strings.TrimLeft(line[end+len(marker):], ", "))
+	}
+	return ""
+}
+
+func sourceConstraints(source string) []string {
+	lower := foldTurkish(source)
+	constraints := []string{}
+	if strings.Contains(lower, "onceki kod") && (strings.Contains(lower, "referans almadan") || strings.Contains(lower, "referans alma")) {
+		constraints = append(constraints, "Önceki kodları referans alma.")
+	}
+	if strings.Contains(lower, "acik kaynak") && strings.Contains(lower, "yara") {
+		constraints = append(constraints, "Açık kaynak kodlardan yararlan.")
+	}
+	if strings.Contains(lower, "fazlara bol") {
+		constraints = append(constraints, "Çözümü aşamalara böl.")
+	}
+	if strings.Contains(lower, "agile") {
+		constraints = append(constraints, "Agile yaklaşımı izle.")
+	}
+	if strings.Contains(lower, "her faz") && (strings.Contains(lower, "sonunda") || strings.Contains(lower, "sonundan")) {
+		constraints = append(constraints, "Her aşamanın sonunda görünür ve doğrulanabilir bir sonuç sun.")
+	}
+	return constraints
+}
+
+func foldTurkish(value string) string {
+	replacer := strings.NewReplacer("ç", "c", "Ç", "c", "ğ", "g", "Ğ", "g", "ı", "i", "I", "i", "İ", "i", "ö", "o", "Ö", "o", "ş", "s", "Ş", "s", "ü", "u", "Ü", "u")
+	return replacer.Replace(strings.ToLower(value))
+}
+
+func bulletList(items []string) string {
+	lines := make([]string, len(items))
+	for i, item := range items {
+		lines[i] = "- " + item
+	}
+	return strings.Join(lines, "\n")
+}
+
+func replaceSection(value, title, body string) string {
+	header := "## " + title
+	start := strings.Index(value, header)
+	if start < 0 {
+		return strings.TrimSpace(value) + "\n\n" + header + "\n" + body
+	}
+	afterHeader := start + len(header)
+	next := strings.Index(value[afterHeader:], "\n## ")
+	if next < 0 {
+		return strings.TrimSpace(value[:afterHeader]) + "\n" + body
+	}
+	next += afterHeader
+	return strings.TrimSpace(value[:afterHeader]) + "\n" + body + "\n\n" + strings.TrimSpace(value[next:])
 }
 
 func (c Client) assess(ctx context.Context, input, instructions string) (Assessment, error) {
@@ -474,7 +561,20 @@ const rubric = `Evaluate this developer prompt on five criteria from 0 to 100: c
 
 const rewriteRubric = `Girdi bir JSON nesnesidir: original_prompt ve additional_context içindeki soru-cevap çiftleri. original_prompt'u temel alanlarda puanla. additional_context bilgilerini doğal biçimde birleştirerek Türkçe, gerçekten yeniden yazılmış bir geliştirici promptu üret. Soruları veya cevapları metnin sonuna ekleme; teknik bilgi uydurma. ÇIKTI KURALLARI: questions alanı mutlaka boş dizi [] olmalı; improved_prompt mutlaka boş olmayan yeniden yazılmış prompt olmalı. improved_* alanlarında yeni promptu puanla. Yalnızca şemaya uyan JSON döndür.`
 
-const ollamaRewriteRubric = `Bu bir PROMPT DÜZENLEME işlemidir. Girdideki görevi çözme, araştırma yapma veya plan üretme. Yalnızca kullanıcının başka bir AI'a göndereceği yeniden yazılmış istek metnini üret. "Zorunlu ifadeler" verildiyse her birini harf harfine koru. Özgün görevdeki somut adları, sayıları, birimleri, teknolojileri, dosya adlarını ve kullanıcı cevaplarını asla çıkarma veya genelleştirme. Görevi doğal ve doğrudan uygulanabilir biçimde düzenle. Markdown başlığı (#), madde işareti, soru-cevap biçimi, açıklama, çözüm veya kod yazma. Teknik ayrıntı uydurma. improved_prompt alanında yalnızca prompt yer almalı.`
+const ollamaRewriteRubric = `Bu bir PROMPT DÜZENLEME işlemidir. Girdideki görevi çözme, araştırma yapma veya plan üretme. Yalnızca kullanıcının başka bir AI'a göndereceği yeniden yazılmış istek metnini üret.
+
+Önce özgün metindeki görevleri, bağlamı, kısıtları, başarı ölçütlerini ve teslimatı ayır; sonra bunları daha açık yaz. Yazım ve dil bilgisini düzeltebilirsin, fakat anlamı değiştiremezsin. Teknik ayrıntı uydurma veya belirsiz bilgiyi teknik bir gerçeğe dönüştürme: kaynakta yalnızca bir kapasite yazıyorsa türünü (RAM, disk vb.) ekleme. Her kısıtın olumlu/olumsuz anlamını aynen koru; farklı kısıtları birleştirme, tersine çevirme veya kaynakta olmayan kısıt ekleme.
+
+"Zorunlu ifadeler" verildiyse her birini harf harfine koru. Özgün görevdeki somut adları, sayıları, birimleri, teknolojileri, dosya adlarını ve kullanıcı cevaplarını asla çıkarma veya genelleştirme.
+
+Yalnızca aşağıdaki Markdown yapısında, kısa ve doğrudan bir prompt yaz. Kaynakta bilgi yoksa bölüm ekleme:
+## Görev
+## Bağlam
+## Kısıtlar
+## Başarı ölçütleri
+## Teslimat
+
+Soru-cevap biçimi, açıklama, çözüm veya kod yazma. improved_prompt alanında yalnızca bu prompt yer almalı.`
 
 func average(criteria []score.Criterion) int {
 	total := 0

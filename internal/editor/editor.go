@@ -62,7 +62,7 @@ func Run(path string) error {
 
 func usableRewrite(original, candidate string) bool {
 	candidate = strings.ToLower(candidate)
-	return len(strings.Fields(candidate)) >= 8 && normalizePrompt(original) != normalizePrompt(candidate) && !strings.Contains(candidate, "#") && !strings.Contains(candidate, "soru:") && !strings.Contains(candidate, "cevap:")
+	return len(strings.Fields(candidate)) >= 8 && normalizePrompt(original) != normalizePrompt(candidate) && !strings.Contains(candidate, "soru:") && !strings.Contains(candidate, "cevap:")
 }
 
 func normalizePrompt(value string) string {
