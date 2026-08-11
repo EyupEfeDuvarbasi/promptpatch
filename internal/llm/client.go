@@ -140,7 +140,7 @@ func (c Client) improveOllama(ctx context.Context, prompt string, questions, ans
 	}
 	rewritten = preserveConstraints(prompt, rewritten)
 	if missing := missingFacts(rewritten, required); len(missing) > 0 {
-		rewritten = addMissingFacts(rewritten, missing, answers)
+		rewritten = addMissingFacts(rewritten, questions, missing, answers)
 	}
 	original := score.Evaluate(prompt)
 	improved := score.Evaluate(rewritten)
@@ -290,16 +290,21 @@ func normalizeText(value string) string {
 	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
 }
 
-func addMissingFacts(prompt string, missing, answers []string) string {
-	answer := make(map[string]bool, len(answers))
-	for _, value := range answers {
-		answer[strings.ToLower(strings.TrimSpace(value))] = true
+func addMissingFacts(prompt string, questions, missing, answers []string) string {
+	answerQuestion := make(map[string]string, len(answers))
+	for i, value := range answers {
+		if i < len(questions) {
+			answerQuestion[strings.ToLower(strings.TrimSpace(value))] = questions[i]
+		}
 	}
 	for _, fact := range missing {
-		if answer[strings.ToLower(fact)] {
-			prompt += " Çıktıyı " + fact + " olarak sun."
+		question := strings.ToLower(answerQuestion[strings.ToLower(fact)])
+		if strings.Contains(question, "çıktı") || strings.Contains(question, "format") || strings.Contains(question, "sonuç") {
+			prompt = appendToSection(prompt, "Teslimat", "Çıktıyı "+fact+" olarak sun.")
+		} else if strings.Contains(foldTurkish(fact), "jetson") {
+			prompt = appendToSection(prompt, "Bağlam", "- Hedef donanım: "+fact+".")
 		} else {
-			prompt += " Şu somut gereksinimi koru: " + fact + "."
+			prompt = appendToSection(prompt, "Bağlam", "- Korunacak somut bilgi: "+fact+".")
 		}
 	}
 	return prompt
@@ -315,7 +320,7 @@ func preserveConstraints(source, rewritten string) string {
 	sourceText := foldTurkish(source)
 	for i, line := range lines {
 		lower := foldTurkish(line)
-		if strings.Contains(sourceText, "acik kaynak") && strings.Contains(sourceText, "yara") && strings.Contains(lower, "acik kaynak") && !strings.Contains(lower, "yararlan") {
+		if strings.Contains(sourceText, "acik kaynak") && strings.Contains(sourceText, "yar") && strings.Contains(lower, "acik kaynak") && !strings.Contains(lower, "yararlan") {
 			lines[i] = removeOpenSourceLead(line)
 		}
 	}
@@ -345,7 +350,7 @@ func sourceConstraints(source string) []string {
 	if strings.Contains(lower, "onceki kod") && (strings.Contains(lower, "referans almadan") || strings.Contains(lower, "referans alma")) {
 		constraints = append(constraints, "Önceki kodları referans alma.")
 	}
-	if strings.Contains(lower, "acik kaynak") && strings.Contains(lower, "yara") {
+	if strings.Contains(lower, "acik kaynak") && strings.Contains(lower, "yar") {
 		constraints = append(constraints, "Açık kaynak kodlardan yararlan.")
 	}
 	if strings.Contains(lower, "fazlara bol") {
@@ -386,6 +391,21 @@ func replaceSection(value, title, body string) string {
 	}
 	next += afterHeader
 	return strings.TrimSpace(value[:afterHeader]) + "\n" + body + "\n\n" + strings.TrimSpace(value[next:])
+}
+
+func appendToSection(value, title, line string) string {
+	header := "## " + title
+	start := strings.Index(value, header)
+	if start < 0 {
+		return strings.TrimSpace(value) + "\n\n" + header + "\n" + line
+	}
+	afterHeader := start + len(header)
+	next := strings.Index(value[afterHeader:], "\n## ")
+	if next < 0 {
+		return strings.TrimSpace(value) + "\n" + line
+	}
+	next += afterHeader
+	return strings.TrimSpace(value[:next]) + "\n" + line + "\n" + strings.TrimSpace(value[next:])
 }
 
 func (c Client) assess(ctx context.Context, input, instructions string) (Assessment, error) {

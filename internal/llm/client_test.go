@@ -150,6 +150,13 @@ func TestPreserveConstraintsRemovesUnsupportedCapacityType(t *testing.T) {
 	}
 }
 
+func TestMissingFactsGoToRelevantSections(t *testing.T) {
+	got := addMissingFacts("## Bağlam\nMevcut bağlam.\n\n## Teslimat\nPlanı sun.", []string{"Beklenen davranış veya çıktı formatı nedir?"}, []string{"md dosyası", "Jetson Orin Nano 8 GB"}, []string{"md dosyası"})
+	if !strings.Contains(got, "## Teslimat\nPlanı sun.\nÇıktıyı md dosyası olarak sun.") || !strings.Contains(got, "## Bağlam\nMevcut bağlam.\n- Hedef donanım: Jetson Orin Nano 8 GB.") || strings.Contains(got, "Şu somut gereksinimi koru") {
+		t.Fatalf("rewrite=%q", got)
+	}
+}
+
 func TestLiveProviders(t *testing.T) {
 	if os.Getenv("PROMPTCHECK_LIVE") != "1" {
 		t.Skip("set PROMPTCHECK_LIVE=1 to call provider APIs")
