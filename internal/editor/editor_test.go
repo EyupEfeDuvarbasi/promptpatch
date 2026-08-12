@@ -1,8 +1,10 @@
 package editor
 
 import (
+	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWrapDoesNotExceedColumnWidth(t *testing.T) {
@@ -10,6 +12,25 @@ func TestWrapDoesNotExceedColumnWidth(t *testing.T) {
 		if len([]rune(line)) > 12 {
 			t.Fatalf("line %q exceeds width", line)
 		}
+	}
+}
+
+func TestReadKeyAcceptsLoneEscape(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	previous := terminalInput
+	terminalInput = reader
+	defer func() { terminalInput = previous }()
+	if _, err := writer.Write([]byte{27}); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if got := readKey(); got != "esc" || time.Since(started) > 200*time.Millisecond {
+		t.Fatalf("key=%q elapsed=%s", got, time.Since(started))
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/chat"
@@ -188,11 +189,11 @@ func readKey() string {
 	if first != 27 {
 		return ""
 	}
-	second, ok := readByte()
+	second, ok := readByteWithin(60 * time.Millisecond)
 	if !ok || (second != '[' && second != 'O') {
 		return "esc"
 	}
-	third, ok := readByte()
+	third, ok := readByteWithin(60 * time.Millisecond)
 	if !ok {
 		return "esc"
 	}
@@ -209,6 +210,15 @@ func readByte() (byte, bool) {
 	var input [1]byte
 	n, err := terminalInput.Read(input[:])
 	return input[0], err == nil && n == 1
+}
+
+// readByteWithin disambiguates a lone Escape key from an arrow-key escape sequence.
+func readByteWithin(timeout time.Duration) (byte, bool) {
+	ready, err := unix.Poll([]unix.PollFd{{Fd: int32(terminalInput.Fd()), Events: unix.POLLIN}}, int(timeout.Milliseconds()))
+	if err != nil || ready == 0 {
+		return 0, false
+	}
+	return readByte()
 }
 
 func clear() { fmt.Print("\033[2J\033[H") }
