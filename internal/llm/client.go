@@ -294,7 +294,7 @@ func factPresent(candidate, fact string) bool {
 		return true
 	}
 	// "md dosyası" is a requested output format, not a literal phrase the model must echo.
-	if fact == "md dosyasi" {
+	if strings.HasPrefix(fact, "md dosyasi") {
 		return strings.Contains(candidate, "markdown dosyasi") || strings.Contains(candidate, "markdown format") || strings.Contains(candidate, "markdown bicim")
 	}
 	return false

@@ -177,8 +177,10 @@ func TestMissingFactsRejectsInsteadOfAppendingAnswers(t *testing.T) {
 }
 
 func TestMissingFactsAcceptsMarkdownEquivalentForMDFile(t *testing.T) {
-	if missing := missingFacts("## Teslimat\nRaporu Markdown formatında sun.", []string{"md dosyası"}); len(missing) != 0 {
-		t.Fatalf("missing=%q", missing)
+	for _, required := range []string{"md dosyası", "md dosyasını", "md dosyasına"} {
+		if missing := missingFacts("## Teslimat\nRaporu Markdown formatında sun.", []string{required}); len(missing) != 0 {
+			t.Fatalf("required=%q missing=%q", required, missing)
+		}
 	}
 	if missing := missingFacts("## Teslimat\nRaporu sun.", []string{"md dosyası"}); len(missing) != 1 {
 		t.Fatalf("missing=%q", missing)
