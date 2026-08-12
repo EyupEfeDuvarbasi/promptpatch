@@ -176,6 +176,15 @@ func TestMissingFactsRejectsInsteadOfAppendingAnswers(t *testing.T) {
 	}
 }
 
+func TestMissingFactsAcceptsMarkdownEquivalentForMDFile(t *testing.T) {
+	if missing := missingFacts("## Teslimat\nRaporu Markdown formatında sun.", []string{"md dosyası"}); len(missing) != 0 {
+		t.Fatalf("missing=%q", missing)
+	}
+	if missing := missingFacts("## Teslimat\nRaporu sun.", []string{"md dosyası"}); len(missing) != 1 {
+		t.Fatalf("missing=%q", missing)
+	}
+}
+
 func TestLiveProviders(t *testing.T) {
 	if os.Getenv("PROMPTCHECK_LIVE") != "1" {
 		t.Skip("set PROMPTCHECK_LIVE=1 to call provider APIs")

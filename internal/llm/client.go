@@ -279,14 +279,25 @@ func quoteFacts(facts []string) string {
 }
 
 func missingFacts(candidate string, required []string) []string {
-	candidate = strings.ToLower(candidate)
 	missing := make([]string, 0)
 	for _, fact := range required {
-		if !strings.Contains(candidate, strings.ToLower(fact)) {
+		if !factPresent(candidate, fact) {
 			missing = append(missing, fact)
 		}
 	}
 	return missing
+}
+
+func factPresent(candidate, fact string) bool {
+	candidate, fact = foldTurkish(candidate), foldTurkish(fact)
+	if strings.Contains(candidate, fact) {
+		return true
+	}
+	// "md dosyası" is a requested output format, not a literal phrase the model must echo.
+	if fact == "md dosyasi" {
+		return strings.Contains(candidate, "markdown dosyasi") || strings.Contains(candidate, "markdown format") || strings.Contains(candidate, "markdown bicim")
+	}
+	return false
 }
 
 func genuineRewrite(original, candidate string) bool {
