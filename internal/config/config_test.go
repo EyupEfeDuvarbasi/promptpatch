@@ -24,3 +24,22 @@ func TestResolveSavesEnvironmentProvider(t *testing.T) {
 		t.Fatalf("mode=%v err=%v", info.Mode(), err)
 	}
 }
+
+func TestConfigureChatContextSavesSelectedWordLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	config, err := ConfigureChatContext(path, strings.NewReader("3\n"), io.Discard)
+	if err != nil || config.ChatContextWords != 2000 || !config.ChatContextSet {
+		t.Fatalf("config=%#v err=%v", config, err)
+	}
+	loaded, err := Load(path)
+	if err != nil || loaded.ChatContextWords != 2000 || !loaded.ChatContextSet {
+		t.Fatalf("loaded=%#v err=%v", loaded, err)
+	}
+}
+
+func TestConfigureChatContextUsesBalancedDefault(t *testing.T) {
+	config, err := ConfigureChatContext(filepath.Join(t.TempDir(), "config.yaml"), strings.NewReader("\n"), io.Discard)
+	if err != nil || config.ChatContextWords != 2000 {
+		t.Fatalf("config=%#v err=%v", config, err)
+	}
+}

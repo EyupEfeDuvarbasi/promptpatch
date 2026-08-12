@@ -18,7 +18,9 @@ Codex CLI, `Ctrl-G` ile o an yazdığınız promptu editöre aktarır. Bir kez a
 promptcheck setup-codex
 ```
 
-`Ctrl-G` artık aynı terminalde PromptPatch ekranını açar. Taslak prompt otomatik gelir, ekran yatay kaydırma gerektirmeden satır kırar; eksik bilgi varsa en fazla iki soru sorar. Yanıtlar yerel modele verilir; model gerçek iyileştirilmiş promptu üretir, iki sürüm yerel kurallarla puanlanır. `↑`/`↓` ve `Enter` ile sürümü seçersiniz.
+`Ctrl-G` artık aynı terminalde PromptPatch ekranını açar. Taslak prompt otomatik gelir, ekran yatay kaydırma gerektirmeden satır kırar; eksik bilgi varsa en fazla iki soru sorar. İlk kurulumda yakın sohbet bağlamı için kapalı, 800, 2.000 veya 4.000 kelimelik sınır seçilir (varsayılan 2.000). Eşleşen yerel oturum bulunursa yalnızca en yeni tam kullanıcı/yardımcı mesajları referans olarak kullanılır; bulunamazsa taslak tek başına işlenir.
+
+Yanıtlar yerel modele verilir; model gerçek iyileştirilmiş promptu üretir, iki sürüm yerel kurallarla puanlanır. Soru-cevap metnini sona ekleyen veya somut gereksinimleri kaybeden model çıktıları kabul edilmez. `↑`/`↓` ve `Enter` ile sürümü seçersiniz.
 
 Bu ayar yalnızca `codex` komutunu saran bir shell fonksiyonu ekler; başka programların editör tercihini değiştirmez.
 
@@ -34,4 +36,4 @@ promptcheck --detail "prompt metni"
 
 Varsayılan mod tamamen local çalışır ve API anahtarı istemez. Daha ayrıntılı anlamsal değerlendirme için `--model <isim>` kullanın; araç ilk kullanımda sağlayıcıyı ve gerekirse API anahtarını sorar.
 
-Promptlar, telemetri ve geçmiş local modda kaydedilmez.
+PromptPatch prompt veya telemetri kaydetmez. Yakın bağlam etkinse CLI’nin zaten yerelde tuttuğu oturum kaydını yalnızca bellek içinde okur.

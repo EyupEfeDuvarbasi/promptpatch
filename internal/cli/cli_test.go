@@ -31,6 +31,13 @@ func TestLocalQuestionsAreLimited(t *testing.T) {
 	}
 }
 
+func TestLocalQuestionsAdaptToTaskType(t *testing.T) {
+	questions := LocalQuestions(score.Result{Kind: score.Performance, NeedsContext: true, NeedsFormat: true})
+	if len(questions) != 2 || !strings.Contains(questions[0], "iş yükü") || !strings.Contains(questions[1], "çıktı") {
+		t.Fatalf("questions=%q", questions)
+	}
+}
+
 func TestLocalImproveLabelsOnlyProvidedAnswers(t *testing.T) {
 	got := LocalImprove("şunu düzelt", []string{"Hangi dosya?", "Beklenen sonuç?"}, []string{"src/parser.go", "boş girdi hata dönsün"})
 	if !strings.Contains(got, "# Hata düzeltme\n\n## Amaç\nşunu düzelt") || !strings.Contains(got, "## Bağlam\n- src/parser.go") || !strings.Contains(got, "## Beklenen sonuç\n- boş girdi hata dönsün") || strings.Contains(got, "Hangi dosya?") {

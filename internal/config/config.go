@@ -14,9 +14,11 @@ import (
 )
 
 type Config struct {
-	Provider llm.Provider
-	APIKey   string
-	Model    string
+	Provider         llm.Provider
+	APIKey           string
+	Model            string
+	ChatContextWords int
+	ChatContextSet   bool
 }
 
 func DefaultPath() (string, error) {
@@ -121,6 +123,14 @@ func Load(path string) (Config, error) {
 			config.APIKey = strings.TrimSpace(value)
 		case "model":
 			config.Model = strings.TrimSpace(value)
+		case "chat_context_words":
+			var words int
+			if _, err := fmt.Sscan(value, &words); err != nil || (words != 0 && words != 800 && words != 2000 && words != 4000) {
+				return Config{}, errors.New("geçersiz chat_context_words")
+			}
+			config.ChatContextWords = words
+		case "chat_context_configured":
+			config.ChatContextSet = strings.TrimSpace(value) == "true"
 		}
 	}
 	if config.Provider != "" && config.Provider != llm.OpenAI && config.Provider != llm.Gemini && config.Provider != llm.Anthropic {
@@ -133,11 +143,47 @@ func Save(path string, config Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	content := fmt.Sprintf("provider: %s\napi_key: %s\nmodel: %s\n", config.Provider, config.APIKey, config.Model)
+	content := fmt.Sprintf("provider: %s\napi_key: %s\nmodel: %s\nchat_context_words: %d\nchat_context_configured: %t\n", config.Provider, config.APIKey, config.Model, config.ChatContextWords, config.ChatContextSet)
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		return err
 	}
 	return os.Chmod(path, 0600)
+}
+
+// ConfigureChatContext asks once during setup how much nearby conversation may be used.
+func ConfigureChatContext(path string, in io.Reader, out io.Writer) (Config, error) {
+	config, err := Load(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Config{}, err
+	}
+	if config.ChatContextSet {
+		return config, nil
+	}
+	fmt.Fprintln(out, "Yakın sohbet bağlamı seçin:")
+	fmt.Fprintln(out, "1) Kapalı")
+	fmt.Fprintln(out, "2) Kısa — son 800 kelime")
+	fmt.Fprintln(out, "3) Dengeli — son 2000 kelime (önerilen)")
+	fmt.Fprintln(out, "4) Geniş — son 4000 kelime")
+	fmt.Fprint(out, "> ")
+	choice, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && len(choice) == 0 {
+		return Config{}, errors.New("sohbet bağlamı seçimi gerekli")
+	}
+	options := map[string]int{"1": 0, "2": 800, "3": 2000, "4": 4000}
+	choice = strings.TrimSpace(choice)
+	if choice == "" {
+		choice = "3"
+	}
+	words, ok := options[choice]
+	if !ok {
+		return Config{}, errors.New("geçersiz sohbet bağlamı seçimi")
+	}
+	config.ChatContextWords = words
+	config.ChatContextSet = true
+	if err := Save(path, config); err != nil {
+		return Config{}, err
+	}
+	return config, nil
 }
 
 func chooseProvider(in io.Reader, out io.Writer, keys map[llm.Provider]string) (llm.Provider, error) {

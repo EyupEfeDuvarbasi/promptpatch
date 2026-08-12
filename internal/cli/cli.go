@@ -100,10 +100,10 @@ func Run(ctx context.Context, args []string, in io.Reader, out io.Writer, client
 func LocalQuestions(result score.Result) []string {
 	questions := []string{}
 	if result.NeedsContext {
-		questions = append(questions, "Hangi dosya, fonksiyon veya teknolojiyle ilgili?")
+		questions = append(questions, contextQuestion(result.Kind))
 	}
 	if result.NeedsFormat {
-		questions = append(questions, "Beklenen davranış veya çıktı formatı nedir?")
+		questions = append(questions, outputQuestion(result.Kind))
 	}
 	if result.NeedsClarifying && len(questions) < 2 {
 		questions = append(questions, "Tam olarak neyin değişmesini istiyorsunuz?")
@@ -112,6 +112,34 @@ func LocalQuestions(result score.Result) []string {
 		return questions[:2]
 	}
 	return questions
+}
+
+func contextQuestion(kind score.TaskKind) string {
+	switch kind {
+	case score.BugFix:
+		return "Hangi dosya veya bileşende, hangi hata belirtisi görülüyor?"
+	case score.APIContract:
+		return "Hangi endpoint, yöntem veya veri sözleşmesi değişecek?"
+	case score.Performance:
+		return "Hangi iş yükü için mevcut ölçüm ve hedef değer nedir?"
+	case score.DataMigration:
+		return "Hangi veri kaynağı ve hangi geçiş kapsamı söz konusu?"
+	case score.Security:
+		return "Hangi akış veya varlık için güvenlik riski ele alınacak?"
+	default:
+		return "Hangi dosya, bileşen veya teknolojiyle ilgili?"
+	}
+}
+
+func outputQuestion(kind score.TaskKind) string {
+	switch kind {
+	case score.Testing:
+		return "Hangi davranış testlerle doğrulanmalı?"
+	case score.ResearchPlan:
+		return "Plan hangi formatta ve hangi kararları içerecek?"
+	default:
+		return "Beklenen davranış veya çıktı formatı nedir?"
+	}
 }
 
 func LocalImprove(prompt string, questions, answers []string) string {

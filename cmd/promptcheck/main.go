@@ -16,6 +16,13 @@ func main() {
 		if err := editor.SetupCodex(); err != nil {
 			fail(err)
 		}
+		path, err := config.DefaultPath()
+		if err != nil {
+			fail(err)
+		}
+		if _, err := config.ConfigureChatContext(path, os.Stdin, os.Stdout); err != nil {
+			fail(err)
+		}
 		return
 	}
 	if len(os.Args) == 3 && os.Args[1] == "edit" {

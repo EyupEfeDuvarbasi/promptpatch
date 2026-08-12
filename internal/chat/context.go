@@ -1,0 +1,187 @@
+// Package chat reads the current project's recent CLI conversation locally.
+package chat
+
+import (
+	"bufio"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+type Message struct {
+	Role string
+	Text string
+}
+
+type Result struct {
+	Text   string
+	Source string
+}
+
+// Load returns recent whole user/assistant messages. It never sends or stores chat content.
+func Load(cwd, host string, words int) Result {
+	if words <= 0 {
+		return Result{}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Result{}
+	}
+	for _, source := range sources(host) {
+		if messages := loadSource(home, cwd, source); len(messages) > 0 {
+			return Result{Text: trim(messages, words), Source: source}
+		}
+	}
+	return Result{}
+}
+
+func sources(host string) []string {
+	if host == "codex" || host == "gemini" || host == "claude" || host == "copilot" {
+		return []string{host}
+	}
+	return []string{"codex", "gemini", "claude", "copilot"}
+}
+
+func loadSource(home, cwd, source string) []Message {
+	root := map[string]string{
+		"codex":   filepath.Join(home, ".codex", "sessions"),
+		"gemini":  filepath.Join(home, ".gemini", "tmp"),
+		"claude":  filepath.Join(home, ".claude", "projects"),
+		"copilot": filepath.Join(home, ".copilot"),
+	}[source]
+	files := recentFiles(root, source)
+	for _, path := range files {
+		messages, matched := readMessages(path, cwd, source)
+		if matched && len(messages) > 0 {
+			return messages
+		}
+	}
+	return nil
+}
+
+func recentFiles(root, source string) []string {
+	var files []string
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".jsonl") {
+			return nil
+		}
+		if source == "gemini" && !strings.Contains(path, string(filepath.Separator)+"chats"+string(filepath.Separator)) {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	sort.Slice(files, func(i, j int) bool {
+		left, _ := os.Stat(files[i])
+		right, _ := os.Stat(files[j])
+		return left.ModTime().After(right.ModTime())
+	})
+	if len(files) > 20 {
+		return files[:20]
+	}
+	return files
+}
+
+func readMessages(path, cwd, source string) ([]Message, bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	defer file.Close()
+	matched := source == "claude" && strings.Contains(path, strings.ReplaceAll(cwd, "/", "-"))
+	var messages []Message
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 4096), 2*1024*1024)
+	first := true
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if first && source == "codex" {
+			first = false
+			if !strings.Contains(string(line), cwd) {
+				return nil, false
+			}
+		}
+		if strings.Contains(string(line), cwd) {
+			matched = true
+		}
+		messages = append(messages, lineMessages(line)...)
+	}
+	return messages, matched
+}
+
+func lineMessages(line []byte) []Message {
+	var value any
+	if json.Unmarshal(line, &value) != nil {
+		return nil
+	}
+	var messages []Message
+	collect(value, &messages)
+	return messages
+}
+
+func collect(value any, messages *[]Message) {
+	switch item := value.(type) {
+	case []any:
+		for _, child := range item {
+			collect(child, messages)
+		}
+	case map[string]any:
+		role, _ := item["role"].(string)
+		if role == "" {
+			role, _ = item["type"].(string)
+		}
+		if role == "user" || role == "assistant" {
+			if text := textOf(item["content"]); text != "" {
+				*messages = append(*messages, Message{Role: role, Text: text})
+				return
+			}
+		}
+		for _, child := range item {
+			collect(child, messages)
+		}
+	}
+}
+
+func textOf(value any) string {
+	switch item := value.(type) {
+	case string:
+		return strings.TrimSpace(item)
+	case []any:
+		parts := make([]string, 0, len(item))
+		for _, child := range item {
+			if object, ok := child.(map[string]any); ok {
+				if text, ok := object["text"].(string); ok {
+					parts = append(parts, text)
+				}
+			}
+		}
+		return strings.TrimSpace(strings.Join(parts, "\n"))
+	}
+	return ""
+}
+
+func trim(messages []Message, limit int) string {
+	var selected []Message
+	used := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		count := len(strings.Fields(messages[i].Text))
+		if count == 0 || (used > 0 && used+count > limit) {
+			continue
+		}
+		selected = append(selected, messages[i])
+		used += count
+		if used >= limit {
+			break
+		}
+	}
+	for left, right := 0, len(selected)-1; left < right; left, right = left+1, right-1 {
+		selected[left], selected[right] = selected[right], selected[left]
+	}
+	parts := make([]string, 0, len(selected))
+	for _, message := range selected {
+		parts = append(parts, strings.ToUpper(message.Role)+": "+message.Text)
+	}
+	return strings.Join(parts, "\n\n")
+}

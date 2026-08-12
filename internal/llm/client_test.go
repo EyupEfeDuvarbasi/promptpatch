@@ -80,6 +80,25 @@ func TestImproveSendsAnswersAndReturnsRewrite(t *testing.T) {
 	}
 }
 
+func TestImproveSendsChatContextAsReference(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var request struct {
+			Input string `json:"input"`
+		}
+		if json.Unmarshal(body, &request) != nil || !strings.Contains(request.Input, `"chat_context":"Kullanıcı önce PostgreSQL dedi."`) {
+			t.Fatalf("chat context missing: %s", body)
+		}
+		_, _ = w.Write([]byte(`{"output_text":` + strconv.Quote(apiAssessment) + `}`))
+	}))
+	defer server.Close()
+	client, _ := New(OpenAI, "test-key")
+	client.URL = server.URL
+	if _, err := client.ImproveWithContext(context.Background(), "şunu düzelt", "Kullanıcı önce PostgreSQL dedi.", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOllamaImproveReturnsRewrite(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"improved_prompt":"src/parser.go dosyasını düzelt."}`) + `}`))
@@ -150,10 +169,10 @@ func TestPreserveConstraintsRemovesUnsupportedCapacityType(t *testing.T) {
 	}
 }
 
-func TestMissingFactsGoToRelevantSections(t *testing.T) {
-	got := addMissingFacts("## Bağlam\nMevcut bağlam.\n\n## Teslimat\nPlanı sun.", []string{"Beklenen davranış veya çıktı formatı nedir?"}, []string{"md dosyası", "Jetson Orin Nano 8 GB"}, []string{"md dosyası"})
-	if !strings.Contains(got, "## Teslimat\nPlanı sun.\nÇıktıyı md dosyası olarak sun.") || !strings.Contains(got, "## Bağlam\nMevcut bağlam.\n- Hedef donanım: Jetson Orin Nano 8 GB.") || strings.Contains(got, "Şu somut gereksinimi koru") {
-		t.Fatalf("rewrite=%q", got)
+func TestMissingFactsRejectsInsteadOfAppendingAnswers(t *testing.T) {
+	missing := missingFacts("## Görev\nPlanı hazırla.", []string{"md dosyası", "Jetson Orin Nano 8 GB"})
+	if strings.Join(missing, "|") != "md dosyası|Jetson Orin Nano 8 GB" {
+		t.Fatalf("missing=%q", missing)
 	}
 }
 

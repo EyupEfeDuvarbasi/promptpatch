@@ -15,7 +15,7 @@ func TestWrapDoesNotExceedColumnWidth(t *testing.T) {
 
 func TestReplaceCodexBlockUsesAbsoluteEditor(t *testing.T) {
 	got := replaceCodexBlock("before\n# promptcheck Codex editor\ncodex() { old; }\nafter\n", codexBlock("/opt/bin/promptpatch-codex-editor"))
-	if !strings.Contains(got, "VISUAL='/opt/bin/promptpatch-codex-editor'") || strings.Contains(got, "old") {
+	if !strings.Contains(got, "PROMPTPATCH_HOST=codex VISUAL='/opt/bin/promptpatch-codex-editor'") || strings.Contains(got, "old") {
 		t.Fatalf("block=%q", got)
 	}
 }

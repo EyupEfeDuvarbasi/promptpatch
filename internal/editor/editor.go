@@ -12,7 +12,9 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/chat"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/cli"
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/config"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/llm"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
@@ -45,7 +47,8 @@ func Run(path string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	assessment, err := client.Improve(ctx, prompt, questions, answers)
+	chatContext := nearbyContext()
+	assessment, err := client.ImproveWithContext(ctx, prompt, chatContext.Text, questions, answers)
 	if err != nil || !usableRewrite(prompt, assessment.ImprovedPrompt) {
 		if err == nil {
 			err = fmt.Errorf("yerel model güvenilir bir yeniden yazım üretmedi")
@@ -54,7 +57,7 @@ func Run(path string) error {
 	}
 	improvedPrompt := assessment.ImprovedPrompt
 	improved := score.Evaluate(improvedPrompt)
-	if !chooseComparison(prompt, result, improvedPrompt, improved) {
+	if !chooseComparison(prompt, result, improvedPrompt, improved, chatContext.Source) {
 		return nil
 	}
 	return os.WriteFile(path, []byte(improvedPrompt+"\n"), 0600)
@@ -78,12 +81,12 @@ func rewriteFailed(err error) error {
 	return nil
 }
 
-func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result) bool {
+func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result, contextSource string) bool {
 	selected := 0
 	return raw(func() bool {
 		for {
 			clear()
-			printComparisonHeader(originalScore, improvedScore)
+			printComparisonHeader(originalScore, improvedScore, contextSource)
 			budget := promptLineBudget()
 			printPrompt("Özgün prompt  ·  "+scoreBadge(originalScore.Score), original, budget)
 			screenln()
@@ -251,12 +254,31 @@ func promptPreview(value string, columns, limit int) []string {
 	return append(lines[:limit-1], fmt.Sprintf("… (%d satır daha)", remaining))
 }
 
-func printComparisonHeader(original, improved score.Result) {
+func printComparisonHeader(original, improved score.Result, contextSource string) {
 	delta := improved.Score - original.Score
 	screenln("PromptPatch")
 	screenln("Özgün " + scoreBadge(original.Score) + "   →   İyileştirilmiş " + scoreBadge(improved.Score) + scoreDelta(delta))
 	screenln("Puan: görev, bağlam, çıktı, kısıt ve uygulanabilirliğin ortalaması")
+	if contextSource != "" {
+		screenln("Yakın sohbet bağlamı: " + contextSource)
+	}
 	screenln(strings.Repeat("─", min(width(), 72)))
+}
+
+func nearbyContext() chat.Result {
+	path, err := config.DefaultPath()
+	if err != nil {
+		return chat.Result{}
+	}
+	settings, err := config.Load(path)
+	if err != nil || !settings.ChatContextSet || settings.ChatContextWords == 0 {
+		return chat.Result{}
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return chat.Result{}
+	}
+	return chat.Load(cwd, os.Getenv("PROMPTPATCH_HOST"), settings.ChatContextWords)
 }
 
 func scoreBadge(score int) string { return fmt.Sprintf("%d/100", score) }
@@ -350,7 +372,7 @@ const codexMarker = "# promptcheck Codex editor"
 
 func codexBlock(editorPath string) string {
 	editor := shellQuote(editorPath)
-	return "\n" + codexMarker + "\ncodex() { VISUAL=" + editor + " EDITOR=" + editor + " command codex \"$@\"; }\n"
+	return "\n" + codexMarker + "\ncodex() { PROMPTPATCH_HOST=codex VISUAL=" + editor + " EDITOR=" + editor + " command codex \"$@\"; }\n"
 }
 
 func wrapperScript(executable string) string {
