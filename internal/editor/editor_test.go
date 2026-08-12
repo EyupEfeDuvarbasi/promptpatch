@@ -3,8 +3,6 @@ package editor
 import (
 	"strings"
 	"testing"
-
-	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
 
 func TestWrapDoesNotExceedColumnWidth(t *testing.T) {
@@ -56,10 +54,9 @@ func TestUsableRewriteAllowsStructuredPrompt(t *testing.T) {
 	}
 }
 
-func TestScoreLineIsCompact(t *testing.T) {
-	result := score.Result{Score: 64, Criteria: []score.Criterion{{Score: 70}, {Score: 60}, {Score: 50}, {Score: 40}, {Score: 100}}}
-	if got := scoreLine("Özgün", result); got != "Özgün: 64/100  G70 B60 S50 K40 U100" {
-		t.Fatalf("line=%q", got)
+func TestScoreSummaryIsDecisionFocused(t *testing.T) {
+	if scoreBadge(64) != "64/100" || scoreDelta(15) != "  (+15)" || scoreDelta(-4) != "  (-4)" || scoreDelta(0) != "  (aynı)" {
+		t.Fatal("score summary is not stable")
 	}
 }
 

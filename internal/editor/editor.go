@@ -83,12 +83,12 @@ func chooseComparison(original string, originalScore score.Result, improved stri
 	return raw(func() bool {
 		for {
 			clear()
-			printScoreSummary(originalScore, improvedScore)
+			printComparisonHeader(originalScore, improvedScore)
 			budget := promptLineBudget()
-			printPrompt("Özgün prompt", original, budget)
+			printPrompt("Özgün prompt  ·  "+scoreBadge(originalScore.Score), original, budget)
 			screenln()
-			printPrompt("İyileştirilmiş prompt", improved, budget)
-			screenln("\n↑/↓ ile seç, Enter ile onayla, Esc ile özgünü koru.")
+			printPrompt("İyileştirilmiş prompt  ·  "+scoreBadge(improvedScore.Score), improved, budget)
+			screenln("\n↑/↓ seç  ·  Enter uygula  ·  Esc özgünü koru")
 			printActions([]string{"İyileştirilmiş promptu uygula", "Özgün promptu koru"}, selected)
 			switch readKey() {
 			case "up", "down":
@@ -251,17 +251,24 @@ func promptPreview(value string, columns, limit int) []string {
 	return append(lines[:limit-1], fmt.Sprintf("… (%d satır daha)", remaining))
 }
 
-func printScoreSummary(original, improved score.Result) {
-	screenln("Puanlar: G görev · B bağlam · S sonuç · K kısıt · U uygulanabilirlik")
-	screenln(scoreLine("Özgün", original))
-	screenln(scoreLine("İyileştirilmiş", improved))
+func printComparisonHeader(original, improved score.Result) {
+	delta := improved.Score - original.Score
+	screenln("PromptPatch")
+	screenln("Özgün " + scoreBadge(original.Score) + "   →   İyileştirilmiş " + scoreBadge(improved.Score) + scoreDelta(delta))
+	screenln("Puan: görev, bağlam, çıktı, kısıt ve uygulanabilirliğin ortalaması")
+	screenln(strings.Repeat("─", min(width(), 72)))
 }
 
-func scoreLine(label string, result score.Result) string {
-	if len(result.Criteria) != 5 {
-		return fmt.Sprintf("%s: %d/100", label, result.Score)
+func scoreBadge(score int) string { return fmt.Sprintf("%d/100", score) }
+
+func scoreDelta(delta int) string {
+	if delta > 0 {
+		return fmt.Sprintf("  (+%d)", delta)
 	}
-	return fmt.Sprintf("%s: %d/100  G%d B%d S%d K%d U%d", label, result.Score, result.Criteria[0].Score, result.Criteria[1].Score, result.Criteria[2].Score, result.Criteria[3].Score, result.Criteria[4].Score)
+	if delta < 0 {
+		return fmt.Sprintf("  (%d)", delta)
+	}
+	return "  (aynı)"
 }
 
 func width() int {
@@ -277,7 +284,7 @@ func promptLineBudget() int {
 	if err != nil || rows < 18 {
 		rows = 24
 	}
-	return max(3, (rows-13)/2)
+	return max(3, (rows-14)/2)
 }
 
 func wrap(value string, columns int) []string {
