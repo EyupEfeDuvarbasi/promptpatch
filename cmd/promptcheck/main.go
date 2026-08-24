@@ -9,6 +9,7 @@ import (
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/config"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/editor"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/llm"
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/server"
 )
 
 func main() {
@@ -23,10 +24,34 @@ func main() {
 		if _, err := config.ConfigureChatContext(path, os.Stdin, os.Stdout); err != nil {
 			fail(err)
 		}
+		if _, err := config.ConfigureRemoteServer(path, os.Stdin, os.Stdout); err != nil {
+			fail(err)
+		}
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "configure-context" {
+		path, err := config.DefaultPath()
+		if err != nil {
+			fail(err)
+		}
+		if _, err := config.ConfigureChatContextAgain(path, os.Stdin, os.Stdout); err != nil {
+			fail(err)
+		}
 		return
 	}
 	if len(os.Args) == 3 && os.Args[1] == "edit" {
 		if err := editor.Run(os.Args[2]); err != nil {
+			fail(err)
+		}
+		return
+	}
+	if len(os.Args) >= 2 && os.Args[1] == "serve" {
+		config, err := server.FromEnv(os.Getenv)
+		if err != nil {
+			fail(err)
+		}
+		fmt.Fprintln(os.Stderr, "promptcheck: serving on "+config.Addr)
+		if err := server.New(config).ListenAndServe(); err != nil {
 			fail(err)
 		}
 		return

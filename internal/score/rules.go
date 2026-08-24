@@ -37,6 +37,18 @@ type Result struct {
 	Contradictory   bool
 }
 
+type ruleSignals struct {
+	Text          string
+	Words         []string
+	Kind          TaskKind
+	Action        int
+	Context       int
+	Output        int
+	Constraints   int
+	Vague         bool
+	Contradictory bool
+}
+
 var vagueTerms = []string{"şunu", "bunu", "bir şekilde", "falan filan", "vs.", "vesaire", "hızlandır", "en iyi şekilde", "daha güzel", "geliştir", "fix the bug", "fix bug", "direk", "direkt"}
 var actionTerms = []string{"düzelt", "fix", "ekle", "add", "oluştur", "create", "güncelle", "update", "sil", "remove", "sağla", "sagla", "indir", "düşür", "dusur", "refactor", "incele", "araştır", "araştırma", "plan", "yaz", "çevir", "özetle", "açıkla", "migrate", "migration"}
 var contextTerms = []string{".go", ".ts", ".tsx", ".js", ".jsx", ".py", ".rs", ".java", "fonksiyon", "function", "func", "metot", "method", "endpoint", "api", "url", "hata", "error", "panic", "stack trace", "react", "go", "golang", "python", "node", "typescript", "javascript", "rust", "java", "jetson", "kamera", "database", "veritaban", "tablo", "component", "bileşen", "ekran", "ui", "sayfa", "klavye", "terminal", "cli", "komut", "help", "readme"}
@@ -45,6 +57,55 @@ var constraintTerms = []string{"yalnızca", "sadece", "değiştirme", "koru", "b
 
 // Evaluate is intentionally local: the same text always produces the same result.
 func Evaluate(prompt string) Result {
+	signals := analyze(prompt)
+
+	clarity := clarityScore(signals)
+	contextScore := evidenceScore(signals.Context)
+	outputScore := evidenceScore(signals.Output)
+	constraintScore := evidenceScore(signals.Constraints)
+	applicability := applicabilityScore(signals)
+
+	if signals.Kind == APIContract && concreteSignals(signals.Text) == 0 {
+		contextScore = min(contextScore, 35)
+	}
+	if signals.Kind == Content && signals.Output > 0 {
+		constraintScore = max(constraintScore, 75)
+	}
+	if signals.Constraints > 0 {
+		constraintScore = max(constraintScore, 75)
+	}
+	if needsVerification(signals.Kind) && signals.Output == 0 {
+		outputScore = min(outputScore, 35)
+	}
+	if signals.Kind == ResearchPlan && signals.Constraints == 0 {
+		constraintScore = min(constraintScore, 35)
+	}
+	if signals.Kind == ResearchPlan && !has(signals.Text, "markdown", "md dosyasi", "rapor", "teslim", "format", "cikti") {
+		outputScore = min(outputScore, 25)
+		applicability = min(applicability, 55)
+	}
+	if signals.Contradictory {
+		clarity, outputScore, constraintScore, applicability = min(clarity, 30), min(outputScore, 35), 15, 15
+	}
+
+	criteria := []Criterion{
+		{Name: "Amaç ve Görev Netliği", Score: clamp(clarity)},
+		{Name: "Bağlam ve Teknik Bilgi", Score: contextScore},
+		{Name: "Beklenen Sonuç", Score: outputScore},
+		{Name: "Kısıtlar ve Sınırlar", Score: constraintScore},
+		{Name: "Belirsizlik / Uygulanabilirlik", Score: clamp(applicability)},
+	}
+	resultFindings := findings(signals.Action, signals.Context, signals.Output, signals.Constraints, signals.Vague, signals.Contradictory, signals.Kind)
+	return Result{
+		Criteria: criteria, Findings: resultFindings, Score: average(criteria), Kind: signals.Kind,
+		NeedsContext:    signals.Context == 0,
+		NeedsFormat:     signals.Output == 0 && needsVerification(signals.Kind),
+		NeedsClarifying: signals.Action == 0 || signals.Vague || signals.Contradictory || len(signals.Words) < 5,
+		Contradictory:   signals.Contradictory,
+	}
+}
+
+func analyze(prompt string) ruleSignals {
 	text := normalize(prompt)
 	words := strings.Fields(text)
 	kind := DetectKind(text)
@@ -67,91 +128,59 @@ func Evaluate(prompt string) Result {
 		output++
 	}
 	contradictory := contradiction(text)
+	return ruleSignals{
+		Text: text, Words: words, Kind: kind, Action: action, Context: context,
+		Output: output, Constraints: constraints, Vague: vague, Contradictory: contradictory,
+	}
+}
 
+func clarityScore(signals ruleSignals) int {
 	clarity := 15
-	if action > 0 {
+	if signals.Action > 0 {
 		clarity = 65
 	}
-	if len(words) >= 8 && !vague {
+	if len(signals.Words) >= 8 && !signals.Vague {
 		clarity += 15
 	}
-	if context > 1 || output > 0 {
+	if signals.Context > 1 || signals.Output > 0 {
 		clarity += 10
 	}
-	if len(words) < 5 {
+	if len(signals.Words) < 5 {
 		clarity -= 30
 	}
-	if vague {
+	if signals.Vague {
 		clarity -= 35
 	}
-	if contradictory {
+	if signals.Contradictory {
 		clarity -= 30
 	}
+	return clarity
+}
 
-	contextScore := evidenceScore(context)
-	outputScore := evidenceScore(output)
-	constraintScore := evidenceScore(constraints)
-	if kind == APIContract && concreteSignals(text) == 0 {
-		contextScore = min(contextScore, 35)
-	}
-	if kind == Content && output > 0 {
-		constraintScore = max(constraintScore, 75)
-	}
-	if constraints > 0 {
-		constraintScore = max(constraintScore, 75)
-	}
-	if needsVerification(kind) && output == 0 {
-		outputScore = min(outputScore, 35)
-	}
-	if kind == ResearchPlan && constraints == 0 {
-		constraintScore = min(constraintScore, 35)
-	}
-	if kind == ResearchPlan && !has(text, "markdown", "md dosyasi", "rapor", "teslim", "format", "cikti") {
-		outputScore = min(outputScore, 25)
-	}
+func applicabilityScore(signals ruleSignals) int {
 	applicability := 100
-	if action == 0 {
+	if signals.Action == 0 {
 		applicability -= 30
 	}
-	if vague {
+	if signals.Vague {
 		applicability -= 25
 	}
-	if vague && context == 0 {
+	if signals.Vague && signals.Context == 0 {
 		applicability -= 20
 	}
-	if context == 0 {
+	if signals.Context == 0 {
 		applicability -= 20
 	}
-	if len(words) < 5 {
+	if len(signals.Words) < 5 {
 		applicability -= 25
 	}
-	if output == 0 && needsVerification(kind) {
+	if signals.Output == 0 && needsVerification(signals.Kind) {
 		applicability -= 20
 	}
-	if kind == ResearchPlan && !has(text, "markdown", "md dosyasi", "rapor", "teslim", "format", "cikti") {
-		applicability = min(applicability, 55)
-	}
-	if contradictory {
+	if signals.Contradictory {
 		applicability -= 55
 	}
-	if contradictory {
-		clarity, outputScore, constraintScore, applicability = min(clarity, 30), min(outputScore, 35), 15, 15
-	}
-
-	criteria := []Criterion{
-		{Name: "Amaç ve Görev Netliği", Score: clamp(clarity)},
-		{Name: "Bağlam ve Teknik Bilgi", Score: contextScore},
-		{Name: "Beklenen Sonuç", Score: outputScore},
-		{Name: "Kısıtlar ve Sınırlar", Score: constraintScore},
-		{Name: "Belirsizlik / Uygulanabilirlik", Score: clamp(applicability)},
-	}
-	findings := findings(action, context, output, constraints, vague, contradictory, kind)
-	return Result{
-		Criteria: criteria, Findings: findings, Score: average(criteria), Kind: kind,
-		NeedsContext: context == 0, NeedsFormat: output == 0 && needsVerification(kind),
-		NeedsClarifying: action == 0 || vague || contradictory || len(words) < 5,
-		Contradictory:   contradictory,
-	}
+	return applicability
 }
 
 func DetectKind(text string) TaskKind {

@@ -24,9 +24,47 @@ func TestBlendUsesConfiguredWeights(t *testing.T) {
 	}
 }
 
-func TestLocalQuestionsAreLimited(t *testing.T) {
+func TestBlendMatchesCriteriaByName(t *testing.T) {
+	rules := score.Result{Criteria: []score.Criterion{{Name: "A", Score: 50}, {Name: "B", Score: 60}}}
+	result := blend(rules, []score.Criterion{{Name: "B", Score: 100}, {Name: "A", Score: 0}})
+	if result.Criteria[0].Score != 20 || result.Criteria[1].Score != 84 {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestRunPrintsHelp(t *testing.T) {
+	var output bytes.Buffer
+	if err := Run(context.Background(), []string{"--help"}, strings.NewReader(""), &output, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"setup-codex", "edit <dosya>", "Ctrl-G"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("help=%q, missing %q", output.String(), want)
+		}
+	}
+}
+
+func TestLocalQuestionsAreBounded(t *testing.T) {
 	questions := LocalQuestions(score.Result{NeedsContext: true, NeedsFormat: true, NeedsClarifying: true})
 	if len(questions) != 2 {
+		t.Fatalf("questions=%v", questions)
+	}
+}
+
+func TestLocalQuestionsUseConversationContext(t *testing.T) {
+	result := score.Evaluate("şunu düzelt")
+	context := "USER: src/parser.go içindeki parseInput fonksiyonunda boş girdi panic ediyor. Mevcut davranışı koru ve birim test ekle."
+	questions := LocalQuestionsWithContext(result, "şunu düzelt", context)
+	if len(questions) != 0 {
+		t.Fatalf("context already contains task details, questions=%v", questions)
+	}
+}
+
+func TestLocalQuestionsAskOnlyMissingOutputWithContext(t *testing.T) {
+	result := score.Evaluate("şunu düzelt")
+	context := "USER: src/parser.go içindeki parseInput fonksiyonundaki hatayı düzelt."
+	questions := LocalQuestionsWithContext(result, "şunu düzelt", context)
+	if len(questions) != 1 || !strings.Contains(questions[0], "çıktı") {
 		t.Fatalf("questions=%v", questions)
 	}
 }
@@ -60,10 +98,17 @@ func TestLocalImproveRaisesStructuralScore(t *testing.T) {
 	}
 }
 
-func TestRunWorksWithoutAPIKey(t *testing.T) {
+func TestLocalImproveWithContextPreservesLatestUserTask(t *testing.T) {
+	got := LocalImproveWithContext("şunu düzelt", "ASSISTANT: Önce bağlamı kontrol et.\n\nUSER: src/parser.go içindeki parseInput fonksiyonu boş girdide panic ediyor. Birim test ekle.", nil, nil)
+	if !strings.Contains(got, "## Bağlam") || !strings.Contains(got, "src/parser.go") || !strings.Contains(got, "parseInput") {
+		t.Fatalf("improved=%q", got)
+	}
+}
+
+func TestRunRejectsDirectPromptInput(t *testing.T) {
 	var output bytes.Buffer
 	err := Run(context.Background(), []string{"şunu düzelt"}, strings.NewReader("src/parser.go\nJSON hata açıklaması\n"), &output, nil)
-	if err != nil || !strings.Contains(output.String(), "İyileştirilmiş Prompt") {
+	if err == nil || !strings.Contains(err.Error(), "Ctrl-G") {
 		t.Fatalf("output=%q err=%v", output.String(), err)
 	}
 }

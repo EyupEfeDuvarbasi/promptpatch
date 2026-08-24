@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os/exec"
@@ -17,101 +16,95 @@ import (
 )
 
 func Run(ctx context.Context, args []string, in io.Reader, out io.Writer, client *llm.Client) error {
-	flags := flag.NewFlagSet("promptcheck", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	detail := flags.Bool("detail", false, "")
-	flags.BoolVar(detail, "d", false, "")
-	copyResult := flags.Bool("copy", false, "")
-	flags.BoolVar(copyResult, "c", false, "")
-	model := flags.String("model", "", "")
-	if err := flags.Parse(args); err != nil {
-		return err
+	_, _, _ = ctx, in, client
+	if wantsHelp(args) {
+		fmt.Fprint(out, HelpText())
+		return nil
 	}
-	prompt, err := readPrompt(flags.Args(), in)
-	if err != nil {
-		return err
-	}
-	if *model != "" {
-		if client == nil {
-			return errors.New("--model için API anahtarı yapılandırması gerekli")
-		}
-		client.Model = *model
-	}
+	return errors.New("doğrudan CLI prompt girişi kaldırıldı; Codex içinde Ctrl-G kullanın")
+}
 
-	originalRules := score.Evaluate(prompt)
-	improvedPrompt := LocalImprove(prompt, nil, nil)
-	original := originalRules
-	improved := score.Evaluate(improvedPrompt)
-	asked := false
-	if client != nil {
-		originalLLM, err := client.Assess(ctx, prompt)
-		if err != nil {
-			return err
-		}
-		improvedLLM := originalLLM
-		if len(originalLLM.Questions) > 0 {
-			answers, err := ask(out, in, originalLLM.Questions)
-			if err != nil {
-				return err
-			}
-			asked = true
-			improvedLLM, err = client.Assess(ctx, prompt+"\n\nEk bilgiler:\n"+answers+"\nBu bilgilerle iyileştirilmiş promptu üret; soru sorma.")
-			if err != nil {
-				return err
-			}
-			if len(improvedLLM.Questions) > 0 || improvedLLM.ImprovedPrompt == "" {
-				return errors.New("ek bilgilerden sonra iyileştirilmiş prompt üretilemedi")
-			}
-		}
-		if improvedLLM.ImprovedPrompt == "" {
-			return errors.New("iyileştirilmiş prompt üretilemedi")
-		}
-		improvedPrompt = improvedLLM.ImprovedPrompt
-		original = blend(originalRules, originalLLM.Criteria)
-		improved = blend(score.Evaluate(improvedPrompt), improvedLLM.ImprovedCriteria)
-	} else if questions := LocalQuestions(originalRules); len(questions) > 0 {
-		answers, err := ask(out, in, questions)
-		if err != nil {
-			return err
-		}
-		asked = true
-		improvedPrompt = LocalImprove(prompt, questions, strings.Split(answers, "\n"))
-		improved = score.Evaluate(improvedPrompt)
-	}
-	if *detail {
-		printDetail(out, "Özgün Prompt", prompt, original)
-		printDetail(out, "İyileştirilmiş Prompt", improvedPrompt, improved)
-	} else {
-		fmt.Fprintf(out, "Puan: %d/100 — %s\n", original.Score, summary(originalRules.Findings))
-		fmt.Fprintf(out, "İyileştirilmiş Puan: %d/100\n", improved.Score)
-		if asked {
-			fmt.Fprintf(out, "Özgün Prompt:\n%s\nİyileştirilmiş Prompt:\n%s\n", prompt, improvedPrompt)
-		}
-	}
-	if *copyResult {
-		if err := copyToClipboard(improvedPrompt); err != nil {
-			return err
-		}
-		fmt.Fprintln(out, "İyileştirilmiş prompt panoya kopyalandı.")
-	}
-	return nil
+func wantsHelp(args []string) bool {
+	return len(args) == 1 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help")
+}
+
+func HelpText() string {
+	return `promptcheck - AI kodlama promptlarını puanla ve iyileştir
+
+Kullanım:
+  promptcheck setup-codex
+  promptcheck configure-context
+  promptcheck serve
+  promptcheck edit <dosya>
+
+Komutlar:
+  setup-codex   Codex EDITOR/VISUAL entegrasyonunu kurar ve yakın bağlam ayarını sorar.
+  configure-context  Yakın sohbet bağlamı ayarını yeniden seçtirir.
+  serve         HTTP API sunucusunu başlatır; server tarafındaki private Ollama'yı kullanır.
+  edit <dosya>  EDITOR/VISUAL akışından çağrılır; dosyadaki taslak promptu iyileştirir.
+
+Doğrudan promptcheck "<prompt>" kullanımı kaldırıldı. Prompt geliştirme akışı
+Codex içinde Ctrl-G ile çalışır.
+
+Server modu için temel değişkenler: PROMPTPATCH_SERVER_ADDR, PROMPTPATCH_SERVER_TOKEN,
+PROMPTPATCH_OLLAMA_URL, PROMPTPATCH_OLLAMA_MODEL, PROMPTPATCH_MAX_CONCURRENCY.
+`
 }
 
 func LocalQuestions(result score.Result) []string {
+	return LocalQuestionsWithContext(result, "", "")
+}
+
+// LocalQuestionsWithContext asks only for information absent from the draft
+// and the explicitly supplied conversation context.
+func LocalQuestionsWithContext(result score.Result, prompt, chatContext string) []string {
 	questions := []string{}
-	if result.NeedsContext {
+	contextText := strings.ToLower(strings.TrimSpace(chatContext + "\n" + prompt))
+	if result.NeedsContext && !contextHasTaskContext(contextText) {
 		questions = append(questions, contextQuestion(result.Kind))
 	}
-	if result.NeedsFormat {
+	if result.NeedsFormat && !contextHasExpectedOutput(contextText) {
 		questions = append(questions, outputQuestion(result.Kind))
 	}
-	if result.NeedsClarifying && len(questions) < 2 {
+	if result.NeedsClarifying && !contextHasTaskContext(contextText) {
 		questions = append(questions, "Tam olarak neyin değişmesini istiyorsunuz?")
 	}
 	if len(questions) > 2 {
 		return questions[:2]
 	}
 	return questions
+}
+
+func contextHasTaskContext(contextText string) bool {
+	if len(strings.Fields(contextText)) < 5 {
+		return false
+	}
+	hasReference := containsAny(contextText,
+		".go", ".ts", ".tsx", ".js", ".jsx", ".py", ".rs", ".java",
+		"dosya", "fonksiyon", "function", "endpoint", "api", "bileşen", "component",
+		"sayfa", "ekran", "terminal", "cli", "tablo", "veritaban")
+	hasTask := containsAny(contextText,
+		"düzelt", "duzelt", "fix", "ekle", "add", "oluştur", "olustur", "güncelle", "guncelle",
+		"refactor", "incele", "araştır", "arastir", "test", "migration", "çevir", "cevir")
+	return hasReference && hasTask
+}
+
+func contextHasExpectedOutput(contextText string) bool {
+	if len(strings.Fields(contextText)) < 5 {
+		return false
+	}
+	return containsAny(contextText,
+		"beklenen", "kabul kriter", "beklenen davranış", "beklenen sonuc", "çıktı", "cikti",
+		"sonuç", "sonuc", "format", "json", "markdown", "rapor", "return", "dön", "don", "test")
+}
+
+func containsAny(value string, terms ...string) bool {
+	for _, term := range terms {
+		if strings.Contains(value, term) {
+			return true
+		}
+	}
+	return false
 }
 
 func contextQuestion(kind score.TaskKind) string {
@@ -143,8 +136,16 @@ func outputQuestion(kind score.TaskKind) string {
 }
 
 func LocalImprove(prompt string, questions, answers []string) string {
+	return LocalImproveWithContext(prompt, "", questions, answers)
+}
+
+// LocalImproveWithContext preserves the latest user context when no model backend is available.
+func LocalImproveWithContext(prompt, chatContext string, questions, answers []string) string {
 	task, criteria := splitAcceptanceCriteria(prompt)
 	sections := []string{"# " + promptKind(task), "\n## Amaç\n" + strings.TrimSpace(task)}
+	if context := lastUserContext(chatContext); context != "" {
+		sections = append(sections, "\n## Bağlam\n- "+strings.ReplaceAll(context, "\n", "\n- "))
+	}
 	for i, answer := range answers {
 		answer = strings.TrimSpace(answer)
 		if answer == "" || i >= len(questions) {
@@ -156,6 +157,17 @@ func LocalImprove(prompt string, questions, answers []string) string {
 		sections = append(sections, "\n## Kabul kriterleri\n"+criteria)
 	}
 	return strings.TrimSpace(strings.Join(sections, "\n"))
+}
+
+func lastUserContext(value string) string {
+	blocks := strings.Split(strings.TrimSpace(value), "\n\n")
+	for index := len(blocks) - 1; index >= 0; index-- {
+		block := strings.TrimSpace(blocks[index])
+		if len(block) >= len("USER:") && strings.EqualFold(block[:len("USER:")], "USER:") {
+			return strings.TrimSpace(block[len("USER:"):])
+		}
+	}
+	return ""
 }
 
 func localSection(question string) string {
@@ -226,12 +238,16 @@ func ask(out io.Writer, in io.Reader, questions []string) (string, error) {
 }
 
 func blend(rules score.Result, semantic []score.Criterion) score.Result {
+	semanticByName := make(map[string]score.Criterion, len(semantic))
+	for _, criterion := range semantic {
+		semanticByName[criterion.Name] = criterion
+	}
 	criteria := make([]score.Criterion, len(rules.Criteria))
 	total := 0
 	for i, rule := range rules.Criteria {
 		value := rule.Score
-		if i < len(semantic) {
-			value = (rule.Score*40 + semantic[i].Score*60) / 100
+		if criterion, ok := semanticByName[rule.Name]; ok {
+			value = (rule.Score*40 + criterion.Score*60) / 100
 		}
 		criteria[i] = score.Criterion{Name: rule.Name, Score: value}
 		total += value
@@ -258,8 +274,11 @@ func summary(findings []string) string {
 
 func copyToClipboard(text string) error {
 	commands := [][]string{{"pbcopy"}}
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		commands = [][]string{{"wl-copy"}, {"xclip", "-selection", "clipboard"}, {"xsel", "--clipboard", "--input"}}
+	case "windows":
+		commands = [][]string{{"clip.exe"}}
 	}
 	for _, command := range commands {
 		path, err := exec.LookPath(command[0])
@@ -270,5 +289,13 @@ func copyToClipboard(text string) error {
 		cmd.Stdin = strings.NewReader(text)
 		return cmd.Run()
 	}
-	return errors.New("pano aracı bulunamadı: pbcopy, wl-copy, xclip veya xsel kurun")
+	return fmt.Errorf("pano aracı bulunamadı: %s kurun", clipboardTools(commands))
+}
+
+func clipboardTools(commands [][]string) string {
+	names := make([]string, len(commands))
+	for i, command := range commands {
+		names[i] = command[0]
+	}
+	return strings.Join(names, ", ")
 }

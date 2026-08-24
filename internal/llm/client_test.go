@@ -109,9 +109,81 @@ func TestOllamaImproveReturnsRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	client.URL = server.URL
+	client.Model = "test-model"
 	result, err := client.Improve(context.Background(), "şunu düzelt", []string{"Hangi dosya?"}, []string{"src/parser.go"})
 	if err != nil || result.ImprovedPrompt != "src/parser.go dosyasını düzelt." {
 		t.Fatalf("result=%#v err=%v", result, err)
+	}
+}
+
+func TestOllamaImproveUsesInstalledModelWhenDefaultIsMissing(t *testing.T) {
+	var requestedModel string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			_, _ = w.Write([]byte(`{"models":[{"name":"llama3:latest"}]}`))
+			return
+		}
+		var request struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		requestedModel = request.Model
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"improved_prompt":"src/parser.go dosyasını düzelt."}`) + `}`))
+	}))
+	defer server.Close()
+	client, err := New(Ollama, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.URL = server.URL + "/api/generate"
+	result, err := client.Improve(context.Background(), "şunu düzelt", []string{"Hangi dosya?"}, []string{"src/parser.go"})
+	if err != nil || result.ImprovedPrompt == "" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if requestedModel != "llama3:latest" {
+		t.Fatalf("model=%q", requestedModel)
+	}
+}
+
+func TestDynamicOllamaImproveReturnsQuestions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":20,"improved_score":0,"original_criteria":[{"Name":"Eksik hedef","Score":20}],"improved_criteria":[],"questions":["Hangi dosya değişecek?","Beklenen davranış nedir?"],"improved_prompt":""}`) + `}`))
+	}))
+	defer server.Close()
+	client, err := New(Ollama, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.URL = server.URL
+	client.Model = "test-model"
+	result, err := client.DynamicImproveWithContext(context.Background(), "şunu düzelt", "", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Questions) != 2 || result.ImprovedPrompt != "" {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestDynamicOllamaImproveReturnsRewrite(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":40,"improved_score":85,"original_criteria":[{"Name":"Bağlam","Score":40}],"improved_criteria":[{"Name":"Bağlam","Score":85}],"questions":[],"improved_prompt":"src/parser.go dosyasındaki parseInput fonksiyonunda boş girdi için JSON hata açıklaması döndür."}`) + `}`))
+	}))
+	defer server.Close()
+	client, err := New(Ollama, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.URL = server.URL
+	client.Model = "test-model"
+	result, err := client.DynamicImproveWithContext(context.Background(), "şunu düzelt", "", []string{"Hangi dosya?"}, []string{"src/parser.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ImprovedScore != 85 || !strings.Contains(result.ImprovedPrompt, "src/parser.go") {
+		t.Fatalf("result=%#v", result)
 	}
 }
 
@@ -120,6 +192,9 @@ func TestParseOllamaRewriteAcceptsRawMarkdown(t *testing.T) {
 		t.Fatalf("rewrite=%q", got)
 	}
 	if got := parseOllamaRewrite(`{"improved_prompt":"Parserı düzelt."}`); got != "Parserı düzelt." {
+		t.Fatalf("rewrite=%q", got)
+	}
+	if got := parseOllamaRewrite("Here is the rewritten prompt:\n\n**Fix Bug**\n\nPlease note that this is only formatting."); got != "**Fix Bug**" {
 		t.Fatalf("rewrite=%q", got)
 	}
 }
@@ -233,8 +308,8 @@ func TestLiveOllamaRewrite(t *testing.T) {
 	if strings.Contains(assessment.ImprovedPrompt, "Soru:") || strings.Contains(assessment.ImprovedPrompt, "Cevap:") || strings.Contains(assessment.ImprovedPrompt, "Doğrulanmış bilgi") {
 		t.Fatalf("raw Q&A leaked into rewrite: %q", assessment.ImprovedPrompt)
 	}
-	if !strings.Contains(assessment.ImprovedPrompt, "## Görev") {
-		t.Fatalf("structured prompt missing: %q", assessment.ImprovedPrompt)
+	if strings.Contains(strings.ToLower(assessment.ImprovedPrompt), "here is") {
+		t.Fatalf("model preamble leaked into rewrite: %q", assessment.ImprovedPrompt)
 	}
 }
 
@@ -265,6 +340,9 @@ func TestLiveOllamaPreservesOpposedConstraints(t *testing.T) {
 
 func TestAPIMessage(t *testing.T) {
 	if got := apiMessage([]byte(`{"error":{"message":"quota exceeded"}}`)); got != "quota exceeded" {
+		t.Fatalf("apiMessage() = %q", got)
+	}
+	if got := apiMessage([]byte(`{"error":"model not found"}`)); got != "model not found" {
 		t.Fatalf("apiMessage() = %q", got)
 	}
 }

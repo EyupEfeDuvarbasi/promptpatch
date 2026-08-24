@@ -62,7 +62,11 @@ func loadSource(home, cwd, source string) []Message {
 }
 
 func recentFiles(root, source string) []string {
-	var files []string
+	type recentFile struct {
+		path    string
+		modTime int64
+	}
+	var files []recentFile
 	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".jsonl") {
 			return nil
@@ -70,18 +74,24 @@ func recentFiles(root, source string) []string {
 		if source == "gemini" && !strings.Contains(path, string(filepath.Separator)+"chats"+string(filepath.Separator)) {
 			return nil
 		}
-		files = append(files, path)
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		files = append(files, recentFile{path: path, modTime: info.ModTime().UnixNano()})
 		return nil
 	})
 	sort.Slice(files, func(i, j int) bool {
-		left, _ := os.Stat(files[i])
-		right, _ := os.Stat(files[j])
-		return left.ModTime().After(right.ModTime())
+		return files[i].modTime > files[j].modTime
 	})
 	if len(files) > 20 {
-		return files[:20]
+		files = files[:20]
 	}
-	return files
+	paths := make([]string, len(files))
+	for i, file := range files {
+		paths[i] = file.path
+	}
+	return paths
 }
 
 func readMessages(path, cwd, source string) ([]Message, bool) {

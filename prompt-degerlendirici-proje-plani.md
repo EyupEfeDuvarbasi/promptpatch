@@ -41,15 +41,15 @@ AI destekli geliştirme artık opsiyonel bir araç değil, günlük iş akışı
 - Bunu terminal içinden, tek bir komut veya kısayolla tetikler.
 - Sonucu terminalde okunabilir formatta gösterir.
 
-### 2.2 Bu Proje NE YAPMAZ (Kapsam Dışı — MVP ve sonrası için)
+### 2.2 Bu Proje NE YAPMAZ
 
 - **Bir editör eklentisi DEĞİLDİR** (VS Code, JetBrains vb. entegrasyonu yok).
-- **Belirli bir AI CLI'nin (Claude Code, Copilot CLI) plugin/eklenti sistemine bağımlı DEĞİLDİR** — bağımsız, ayrı bir CLI aracıdır (bkz. §3).
+- **Host CLI'nin plugin sistemine bağımlı DEĞİLDİR** — Codex'in standart EDITOR/VISUAL akışını kullanır.
 - **Kendi başına bir chat arayüzü / konuşma botu DEĞİLDİR** — tek işlevi puanlama + iyileştirmedir, genel sohbet yapmaz.
-- **Kullanıcının prompt geçmişini/oturumunu otomatik izlemez** — sadece kullanıcı açıkça bir prompt verdiğinde çalışır (pasif arka plan izleme yok).
-- **Bulut tabanlı bir servis/SaaS DEĞİLDİR** — MVP'de tamamen local çalışan bir CLI aracıdır, merkezi bir sunucuya veri göndermez (bkz. §7 Gizlilik).
+- **Arka planda sürekli çalışan bir daemon DEĞİLDİR** — yalnızca kullanıcı `Ctrl-G` akışını başlattığında çalışır.
+- **Promptları kalıcı olarak saklamaz** — yakın sohbet bağlamı açıkça etkinleştirilirse backend'e referans olarak gönderilebilir.
 - **Global OS-seviye hotkey (arka plan daemon) MVP kapsamında YOKTUR** — bkz. §5.3.
-- **Windows desteği MVP kapsamında YOKTUR** — sadece Linux ve macOS.
+- **Genel amaçlı sohbet arayüzü DEĞİLDİR** — yalnızca prompt iyileştirme akışını destekler.
 
 ---
 
@@ -101,26 +101,18 @@ Her kriter 0-100 arası puanlanır; beş kriterin aritmetik ortalaması promptun
 
 ## 5. Kullanım Akışı ve Komut Arayüzü
 
-### 5.1 Temel Komut (MVP)
+### 5.1 Editör komutu
 
 ```
-promptcheck "<prompt metni>"
+promptcheck edit <dosya>
 ```
 
-veya stdin üzerinden:
+Bu komut Codex'in `EDITOR`/`VISUAL` akışından çağrılır.
 
-```
-echo "<prompt metni>" | promptcheck
-```
+### 5.2 Kullanıcı akışı
 
-### 5.2 Flag'ler (MVP)
-
-| Flag | Açıklama |
-|---|---|
-| (flag yok) | Kısa çıktı: puan + 1-2 cümlelik özet |
-| `-d`, `--detail` | Detaylı çıktı: kriter kırılımı, gerekçe, iyileştirilmiş prompt |
-| `-c`, `--copy` | İyileştirilmiş promptu panoya kopyalar |
-| `--model <isim>` | Kullanılacak LLM modelini belirtir (belirtilmezse config'den okunur) |
+Prompt editöre aktarılır, en fazla iki karar değiştirici soru sorulur, özgün ve
+iyileştirilmiş sürüm karşılaştırılır; kullanıcı seçerse dosyaya yazılır.
 
 ### 5.3 Tetikleme (Kısayol)
 

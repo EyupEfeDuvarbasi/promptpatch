@@ -5,14 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/api"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/chat"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/cli"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/config"
@@ -20,7 +19,12 @@ import (
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
 
-var terminalInput = os.Stdin
+var (
+	terminalInput = os.Stdin
+	getenv        = os.Getenv
+)
+
+const minimumMascotDuration = 250 * time.Millisecond
 
 func Run(path string) error {
 	contents, err := os.ReadFile(path)
@@ -33,35 +37,168 @@ func Run(path string) error {
 	}
 	enterAlternateScreen()
 	defer leaveAlternateScreen()
-	result := score.Evaluate(prompt)
-	questions := cli.LocalQuestions(result)
-	answers, complete := ask(questions)
-	if !complete {
-		return nil
-	}
-	clear()
-	screenln("Prompt iyileştiriliyor…")
-	screenln("Yerel model yanıtı hazırlanıyor.")
-	client, err := llm.New(llm.Ollama, "")
-	if err != nil {
-		return rewriteFailed(err)
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	chatContext := nearbyContext()
-	assessment, err := client.ImproveWithContext(ctx, prompt, chatContext.Text, questions, answers)
-	if err != nil || !usableRewrite(prompt, assessment.ImprovedPrompt) {
-		if err == nil {
-			err = fmt.Errorf("yerel model güvenilir bir yeniden yazım üretmedi")
+	var improvement editorImprovement
+	var complete bool
+	var questions, answers []string
+	for {
+		improvement, questions, complete = improveWithMascot(ctx, prompt, chatContext.Text, questions, answers)
+		if !complete {
+			return nil
 		}
-		return rewriteFailed(err)
+		if len(questions) == 0 {
+			break
+		}
+		answers, complete = ask(questions)
+		if !complete {
+			return nil
+		}
 	}
-	improvedPrompt := assessment.ImprovedPrompt
-	improved := score.Evaluate(improvedPrompt)
-	if !chooseComparison(prompt, result, improvedPrompt, improved, chatContext.Source) {
+	if !complete {
 		return nil
 	}
-	return os.WriteFile(path, []byte(improvedPrompt+"\n"), 0600)
+	contextSource := comparisonSource(chatContext.Source, improvement.Source)
+	if !showableImprovement(improvement) {
+		return rewriteFailed(fmt.Errorf("üretilen prompt skoru artırmadı: %s -> %s", scoreBadge(improvement.Original.Score), scoreBadge(improvement.Improved.Score)))
+	}
+	if !chooseComparison(prompt, improvement.Original, improvement.Prompt, improvement.Improved, contextSource) {
+		return nil
+	}
+	return os.WriteFile(path, []byte(improvement.Prompt+"\n"), 0600)
+}
+
+type editorImprovement struct {
+	Prompt   string
+	Source   string
+	Original score.Result
+	Improved score.Result
+}
+
+func improveWithMascot(ctx context.Context, prompt, chatContext string, questions, answers []string) (editorImprovement, []string, bool) {
+	clear()
+	screenln("Prompt iyileştiriliyor…")
+	screenln("Model yanıtı hazırlanıyor.")
+	hideCursor()
+	started := time.Now()
+	stopMascot := startMascot(os.Stdout, width, colorEnabled())
+	improvement, nextQuestions, complete := improveWithBestAvailable(ctx, prompt, chatContext, questions, answers)
+	if remaining := minimumMascotDuration - time.Since(started); remaining > 0 {
+		timer := time.NewTimer(remaining)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+		}
+	}
+	stopMascot()
+	showCursor()
+	clear()
+	return improvement, nextQuestions, complete
+}
+
+func improveWithBestAvailable(ctx context.Context, prompt, chatContext string, questions, answers []string) (editorImprovement, []string, bool) {
+	// Ask deterministic, decision-changing questions before invoking a backend.
+	// This keeps the UX consistent when no remote server is configured.
+	if len(questions) == 0 && len(answers) == 0 {
+		if nextQuestions := cli.LocalQuestionsWithContext(score.Evaluate(prompt), prompt, chatContext); len(nextQuestions) > 0 {
+			return editorImprovement{}, nextQuestions, true
+		}
+	}
+	if response, ok := improveWithRemoteServer(ctx, prompt, chatContext, questions, answers); ok {
+		if len(response.Questions) > 0 && strings.TrimSpace(response.ImprovedPrompt) == "" {
+			return editorImprovement{}, response.Questions, true
+		} else if strings.TrimSpace(response.ImprovedPrompt) != "" {
+			return improvementFromAPI(response), nil, true
+		}
+	}
+	if improved, ok := improveWithLocalOllama(ctx, prompt, chatContext, questions, answers); ok {
+		original := score.Evaluate(prompt)
+		improvedScore := score.Evaluate(improved)
+		return editorImprovement{Prompt: improved, Source: "ollama", Original: original, Improved: improvedScore}, nil, true
+	}
+	improved := cli.LocalImproveWithContext(prompt, chatContext, questions, answers)
+	return editorImprovement{Prompt: improved, Source: "local", Original: score.Evaluate(prompt), Improved: score.Evaluate(improved)}, nil, true
+}
+
+func improveWithRemoteServer(ctx context.Context, prompt, chatContext string, questions, answers []string) (api.ImproveResponse, bool) {
+	path, err := config.DefaultPath()
+	if err != nil {
+		return api.ImproveResponse{}, false
+	}
+	url, token, ok := config.RemoteServer(path)
+	if !ok {
+		return api.ImproveResponse{}, false
+	}
+	response, err := api.Client{URL: url, Token: token}.Improve(ctx, api.ImproveRequest{
+		Prompt: prompt, Questions: questions, Answers: answers, ChatContext: chatContext,
+	})
+	if err != nil {
+		return api.ImproveResponse{}, false
+	}
+	if strings.TrimSpace(response.ImprovedPrompt) == "" {
+		return response, len(response.Questions) > 0
+	}
+	if (response.ImprovedScore != 0 || response.OriginalScore != 0) && response.ImprovedScore <= response.OriginalScore {
+		return api.ImproveResponse{}, false
+	}
+	if !usableRewrite(prompt, response.ImprovedPrompt) {
+		return api.ImproveResponse{}, false
+	}
+	return response, true
+}
+
+func improveWithLocalOllama(ctx context.Context, prompt, chatContext string, questions, answers []string) (string, bool) {
+	client, err := llm.New(llm.Ollama, "")
+	if err != nil {
+		return "", false
+	}
+	assessment, err := client.ImproveWithContext(ctx, prompt, chatContext, questions, answers)
+	if err != nil || !usableRewrite(prompt, assessment.ImprovedPrompt) {
+		return "", false
+	}
+	improved := score.Evaluate(assessment.ImprovedPrompt)
+	original := score.Evaluate(prompt)
+	if improved.Score <= original.Score {
+		return "", false
+	}
+	return assessment.ImprovedPrompt, true
+}
+
+func improvementFromAPI(response api.ImproveResponse) editorImprovement {
+	return editorImprovement{
+		Prompt: response.ImprovedPrompt, Source: "server/" + response.Source,
+		Original: resultFromAPI(response.OriginalScore, response.Original),
+		Improved: resultFromAPI(response.ImprovedScore, response.Improved),
+	}
+}
+
+func showableImprovement(improvement editorImprovement) bool {
+	return strings.TrimSpace(improvement.Prompt) != "" && improvement.Improved.Score > improvement.Original.Score
+}
+
+func resultFromAPI(total int, criteria []score.Criterion) score.Result {
+	if total == 0 && len(criteria) > 0 {
+		for _, criterion := range criteria {
+			total += criterion.Score
+		}
+		total /= len(criteria)
+	}
+	return score.Result{Score: total, Criteria: criteria}
+}
+
+func comparisonSource(contextSource, rewriteSource string) string {
+	if rewriteSource == "" {
+		return contextSource
+	}
+	source := "İyileştirme kaynağı: " + rewriteSource
+	if contextSource == "" {
+		return source
+	}
+	return contextSource + " · " + source
 }
 
 func usableRewrite(original, candidate string) bool {
@@ -161,11 +298,11 @@ func removeLastRune(value []byte) []byte {
 }
 
 func raw(run func() bool) bool {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	tty, closeTTY, err := openTTY()
 	if err != nil {
 		tty = os.Stdin
 	} else {
-		defer tty.Close()
+		defer closeTTY()
 	}
 	previousInput := terminalInput
 	terminalInput = tty
@@ -210,15 +347,6 @@ func readByte() (byte, bool) {
 	var input [1]byte
 	n, err := terminalInput.Read(input[:])
 	return input[0], err == nil && n == 1
-}
-
-// readByteWithin disambiguates a lone Escape key from an arrow-key escape sequence.
-func readByteWithin(timeout time.Duration) (byte, bool) {
-	ready, err := unix.Poll([]unix.PollFd{{Fd: int32(terminalInput.Fd()), Events: unix.POLLIN}}, int(timeout.Milliseconds()))
-	if err != nil || ready == 0 {
-		return 0, false
-	}
-	return readByte()
 }
 
 func clear() { fmt.Print("\033[2J\033[H") }
@@ -350,49 +478,25 @@ func wrap(value string, columns int) []string {
 }
 
 func SetupCodex() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	rc := filepath.Join(home, ".zshrc")
-	if strings.HasSuffix(os.Getenv("SHELL"), "bash") {
-		rc = filepath.Join(home, ".bashrc")
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	editorPath := filepath.Join(home, ".local", "share", "promptpatch", "bin", "promptpatch-codex-editor")
-	if err := os.MkdirAll(filepath.Dir(editorPath), 0700); err != nil {
-		return err
-	}
-	if err := os.WriteFile(editorPath, []byte(wrapperScript(executable)), 0700); err != nil {
-		return err
-	}
-	contents, _ := os.ReadFile(rc)
-	block := codexBlock(editorPath)
-	updated := replaceCodexBlock(string(contents), block)
-	if updated == string(contents) {
-		return nil
-	}
-	return os.WriteFile(rc, []byte(updated), 0600)
+	return setupCodex()
 }
 
-const codexMarker = "# promptcheck Codex editor"
-
-func codexBlock(editorPath string) string {
-	editor := shellQuote(editorPath)
-	return "\n" + codexMarker + "\ncodex() { PROMPTPATCH_HOST=codex VISUAL=" + editor + " EDITOR=" + editor + " command codex \"$@\"; }\n"
-}
-
-func wrapperScript(executable string) string {
-	return "#!/bin/sh\nexec " + shellQuote(executable) + " edit \"$@\"\n"
-}
+const (
+	codexMarker    = "# promptcheck Codex editor"
+	codexEndMarker = "# end promptcheck Codex editor"
+)
 
 func replaceCodexBlock(contents, block string) string {
 	start := strings.Index(contents, codexMarker)
 	if start < 0 {
 		return contents + block
+	}
+	if end := strings.Index(contents[start:], codexEndMarker); end >= 0 {
+		end += start + len(codexEndMarker)
+		if next := strings.Index(contents[end:], "\n"); next >= 0 {
+			end += next + 1
+		}
+		return contents[:start] + block + contents[end:]
 	}
 	end := strings.Index(contents[start:], "\n")
 	if end < 0 {
@@ -405,8 +509,4 @@ func replaceCodexBlock(contents, block string) string {
 	}
 	end += endLine + 1
 	return contents[:start] + block + contents[end:]
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\\\"'\\\"'") + "'"
 }
