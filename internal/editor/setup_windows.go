@@ -88,14 +88,6 @@ func wrapperScript(executable string) string {
 	return "@echo off\r\n\"" + executable + "\" edit %*\r\n"
 }
 
-func codexLauncherScript(codexPath, editorPath string) string {
-	return "@echo off\r\n" +
-		"set \"PROMPTPATCH_HOST=codex\"\r\n" +
-		"set \"VISUAL=" + editorPath + "\"\r\n" +
-		"set \"EDITOR=" + editorPath + "\"\r\n" +
-		"\"" + codexPath + "\" %*\r\n"
-}
-
 func powerShellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
