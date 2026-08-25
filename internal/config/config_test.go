@@ -37,21 +37,21 @@ func TestResolveSavesEnvironmentProvider(t *testing.T) {
 	}
 }
 
-func TestConfigureChatContextSavesSelectedWordLimit(t *testing.T) {
+func TestConfigureChatContextSavesFixedWordLimit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	config, err := ConfigureChatContext(path, strings.NewReader("3\n"), io.Discard)
-	if err != nil || config.ChatContextWords != 2000 || !config.ChatContextSet {
+	config, err := ConfigureChatContext(path, strings.NewReader("2\n"), io.Discard)
+	if err != nil || config.ChatContextWords != 3000 || !config.ChatContextSet {
 		t.Fatalf("config=%#v err=%v", config, err)
 	}
 	loaded, err := Load(path)
-	if err != nil || loaded.ChatContextWords != 2000 || !loaded.ChatContextSet {
+	if err != nil || loaded.ChatContextWords != 3000 || !loaded.ChatContextSet {
 		t.Fatalf("loaded=%#v err=%v", loaded, err)
 	}
 }
 
 func TestConfigureChatContextUsesBalancedDefault(t *testing.T) {
 	config, err := ConfigureChatContext(filepath.Join(t.TempDir(), "config.yaml"), strings.NewReader("\n"), io.Discard)
-	if err != nil || config.ChatContextWords != 2000 {
+	if err != nil || config.ChatContextWords != 3000 {
 		t.Fatalf("config=%#v err=%v", config, err)
 	}
 }
@@ -61,9 +61,22 @@ func TestConfigureChatContextAgainReopensChoice(t *testing.T) {
 	if _, err := ConfigureChatContext(path, strings.NewReader("1\n"), io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	config, err := ConfigureChatContextAgain(path, strings.NewReader("4\n"), io.Discard)
-	if err != nil || config.ChatContextWords != 4000 || !config.ChatContextSet {
+	config, err := ConfigureChatContextAgain(path, strings.NewReader("2\n"), io.Discard)
+	if err != nil || config.ChatContextWords != 3000 || !config.ChatContextSet {
 		t.Fatalf("config=%#v err=%v", config, err)
+	}
+}
+
+func TestLoadMigratesLegacyContextLimits(t *testing.T) {
+	for _, words := range []string{"800", "2000", "4000"} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte(`{"chat_context_words":`+words+`,"chat_context_configured":true}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		config, err := Load(path)
+		if err != nil || config.ChatContextWords != 3000 {
+			t.Fatalf("words=%s config=%#v err=%v", words, config, err)
+		}
 	}
 }
 

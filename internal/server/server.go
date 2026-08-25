@@ -61,6 +61,8 @@ type ImproveResponse struct {
 	Questions      []string          `json:"questions,omitempty"`
 	ImprovedPrompt string            `json:"improved_prompt"`
 	Source         string            `json:"source"`
+	QualityStatus  string            `json:"quality_status,omitempty"`
+	QualityMessage string            `json:"quality_message,omitempty"`
 }
 
 type rateWindow struct {
@@ -231,8 +233,8 @@ func (s *Server) improve(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "prompt gerekli")
 		return
 	}
-	if len(request.Questions) > 2 || len(request.Answers) > 2 {
-		writeError(w, http.StatusBadRequest, "en fazla iki soru ve cevap desteklenir")
+	if len(request.Questions) > 1 || len(request.Answers) > 1 {
+		writeError(w, http.StatusBadRequest, "en fazla bir soru ve cevap desteklenir")
 		return
 	}
 	select {
@@ -267,25 +269,22 @@ func (s *Server) rewrite(ctx context.Context, request ImproveRequest) ImproveRes
 		}
 	}
 	if client, err := s.ollamaClient(); err == nil {
-		if rewrite, err := client.ImproveWithContext(ctx, request.Prompt, request.ChatContext, request.Questions, request.Answers); err == nil {
+		rewrite, rewriteErr := client.ImproveWithContext(ctx, request.Prompt, request.ChatContext, request.Questions, request.Answers)
+		if rewriteErr == nil {
 			improved := score.Evaluate(rewrite.ImprovedPrompt)
-			if improved.Score >= original.Score && cli.ValidRewrite(request.Prompt, rewrite.ImprovedPrompt) && !leaksClarifyingQuestion(rewrite.ImprovedPrompt, request.Questions) {
+			if cli.ValidRewrite(request.Prompt, rewrite.ImprovedPrompt) && !leaksClarifyingQuestion(rewrite.ImprovedPrompt, request.Questions) {
 				return ImproveResponse{
 					OriginalScore: original.Score, ImprovedScore: improved.Score,
 					Original: original.Criteria, Improved: improved.Criteria,
 					ImprovedPrompt: rewrite.ImprovedPrompt, Source: "ollama",
+					QualityStatus: rewrite.QualityStatus,
 				}
 			}
+			return ImproveResponse{OriginalScore: original.Score, Original: original.Criteria, Source: "ollama", QualityStatus: "failed", QualityMessage: "üretilen prompt kalite kontrolünden geçmedi"}
 		}
+		return ImproveResponse{OriginalScore: original.Score, Original: original.Criteria, Source: "ollama", QualityStatus: "failed", QualityMessage: rewriteErr.Error()}
 	}
-	improvedPrompt := cli.LocalImproveWithContext(request.Prompt, request.ChatContext, request.Questions, request.Answers)
-	improved := score.Evaluate(improvedPrompt)
-	response := ImproveResponse{
-		OriginalScore: original.Score, ImprovedScore: improved.Score,
-		Original: original.Criteria, Improved: improved.Criteria,
-		ImprovedPrompt: improvedPrompt, Source: "local",
-	}
-	return response
+	return ImproveResponse{OriginalScore: original.Score, Original: original.Criteria, Source: "local", QualityStatus: "failed", QualityMessage: "Ollama modeli kullanılamıyor"}
 }
 
 func leaksClarifyingQuestion(prompt string, questions []string) bool {

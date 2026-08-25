@@ -36,14 +36,14 @@ go run ./tools/prompttest
 ```
 
 Bu test sentetik cevaplar kullanır; gerçek model kalitesini değil, soru üretimi,
-bağlam kullanımı ve yerel fallback akışını doğrular. Kaynak kodu testleri için:
+bağlam kullanımı ve güvenli başarısızlık akışını doğrular. Kaynak kodu testleri için:
 
 ```powershell
 go test ./...
 go vet ./...
 ```
 
-Windows'ta Go ve PromptPatch kurulumu, Codex entegrasyonu ve local fallback ayarı
+Windows'ta Go ve PromptPatch kurulumu, Codex entegrasyonu ve yerel model ayarı
 tek script ile yapılabilir:
 
 ```powershell
@@ -72,9 +72,9 @@ Codex CLI, `Ctrl-G` ile o an yazdığınız promptu editöre aktarır. Bir kez a
 promptcheck setup-codex
 ```
 
-`Ctrl-G` artık aynı terminalde PromptPatch ekranını açar. Taslak prompt otomatik gelir, ekran yatay kaydırma gerektirmeden satır kırar; eksik bilgi varsa en fazla iki karar değiştirici soru sorar. İlk kurulumda yakın sohbet bağlamı için kapalı, 800, 2.000 veya 4.000 kelimelik sınır seçilir (varsayılan 2.000). Remote server seçilirse sohbet bağlamının gönderimi için ayrıca onay istenir; onay yoksa yalnız taslak prompt gönderilir.
+`Ctrl-G` artık aynı terminalde PromptPatch ekranını açar. Taslak prompt otomatik gelir, ekran yatay kaydırma gerektirmeden satır kırar; güvenilir iyileştirmeyi engelleyen eksik bilgi varsa en fazla bir karar değiştirici soru sorar. Yakın sohbet bağlamı açıldığında son 3.000 kelime kullanılır. Remote server seçilirse sohbet bağlamının gönderimi için ayrıca onay istenir; onay yoksa yalnız taslak prompt gönderilir.
 
-Yanıtlar önce yerel eksik-bilgi kontrolüyle toplanır; sonra yapılandırmaya göre merkezi PromptPatch server'a veya yerel modele verilir. Model gerçek iyileştirilmiş promptu üretir, iki sürüm yerel kurallarla puanlanır. Soru-cevap metnini sona ekleyen, somut gereksinimleri kaybeden veya skoru düşüren model çıktıları kabul edilmez. `↑`/`↓` ve `Enter` ile sürümü seçersiniz.
+Yanıtlar önce yerel eksik-bilgi kontrolüyle toplanır; sonra yapılandırmaya göre merkezi PromptPatch server'a veya yerel modele verilir. Model yapılandırılmış bir iyileştirme üretir; kesilmiş, tekrarlı, somut gereksinimleri kaybeden veya kaynakta olmayan bilgi ekleyen çıktılar bir kez düzeltilir. İkinci deneme de başarısızsa özgün prompt korunur. Gösterilen sayı yalnızca yapısal puandır; kabul kararı kalite kontrolüyle verilir. `↑`/`↓` ve `Enter` ile sürümü seçersiniz.
 
 Bu ayar yalnızca `codex` komutunu saran bir shell/PowerShell fonksiyonu ekler; başka programların editör tercihini değiştirmez. Windows'ta PowerShell 7 ve Windows PowerShell profil dosyalarına fonksiyon eklenir; ayrıca `%LOCALAPPDATA%\PromptPatch\bin\promptpatch-codex-editor.cmd` ve `%LOCALAPPDATA%\PromptPatch\bin\promptpatch-codex.cmd` wrapper'ları oluşturulur. Etkinleşmesi için yeni PowerShell penceresi açın.
 
@@ -116,13 +116,13 @@ Kullanıcılara Ollama kurdurmadan çalıştırmak için PromptPatch'i kendi ser
 Kullanıcı / istemci
   -> PromptPatch HTTP API
   -> private Ollama
-  -> gemma3:4b
+  -> qwen2.5:7b
 ```
 
 Server kurulumu için önerilen model:
 
 ```sh
-ollama pull gemma3:4b
+ollama pull qwen2.5:7b
 ```
 
 API sunucusunu başlatma:
@@ -131,7 +131,7 @@ API sunucusunu başlatma:
 export PROMPTPATCH_SERVER_ADDR=127.0.0.1:8080
 export PROMPTPATCH_SERVER_TOKEN="uzun-rastgele-token"
 export PROMPTPATCH_OLLAMA_URL=http://127.0.0.1:11434/api/generate
-export PROMPTPATCH_OLLAMA_MODEL=gemma3:4b
+export PROMPTPATCH_OLLAMA_MODEL=qwen2.5:7b
 export PROMPTPATCH_MAX_CONCURRENCY=2
 export PROMPTPATCH_RATE_LIMIT_PER_MINUTE=10
 promptcheck serve
@@ -146,7 +146,7 @@ curl -X POST http://127.0.0.1:8080/v1/improve \
   -d '{"prompt":"src/parser.go dosyasındaki boş girdi hatasını düzelt"}'
 ```
 
-Yanıtta `source` alanı `ollama` ise model çıktısı kullanılmıştır. Ollama çalışmıyorsa, timeout olursa veya model güvenilir çıktı üretmezse API hata döndürmek yerine `source: "local"` ile yerel kural tabanlı iyileştirmeye düşer.
+Yanıtta `source` alanı `ollama` ve `quality_status` alanı `passed` veya `corrected` ise model çıktısı kullanılabilir. Ollama çalışmıyorsa, timeout olursa veya iki denemede güvenilir çıktı üretmezse `quality_status: "failed"` döner ve özgün prompt korunur.
 
 Hazır endpointler:
 
@@ -163,7 +163,7 @@ Ubuntu/Debian tabanlı bir server için örnek kurulum:
 sudo apt-get update
 sudo apt-get install -y curl git
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull gemma3:4b
+ollama pull qwen2.5:7b
 ```
 
 Go kuruluysa binary'yi doğrudan GitHub'dan kurabilirsiniz:
@@ -191,7 +191,7 @@ sudo tee /etc/promptpatch/promptpatch.env >/dev/null <<'EOF'
 PROMPTPATCH_SERVER_ADDR=127.0.0.1:8080
 PROMPTPATCH_SERVER_TOKEN=uzun-rastgele-token
 PROMPTPATCH_OLLAMA_URL=http://127.0.0.1:11434/api/generate
-PROMPTPATCH_OLLAMA_MODEL=gemma3:4b
+PROMPTPATCH_OLLAMA_MODEL=qwen2.5:7b
 PROMPTPATCH_MAX_CONCURRENCY=2
 PROMPTPATCH_RATE_LIMIT_PER_MINUTE=10
 EOF

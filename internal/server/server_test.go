@@ -23,7 +23,7 @@ func TestImproveRequiresBearerTokenWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestImproveFallsBackToLocalRewriteWhenOllamaFails(t *testing.T) {
+func TestImprovePreservesOriginalWhenOllamaFails(t *testing.T) {
 	server := New(Config{OllamaURL: "http://127.0.0.1:1/api/generate", Timeout: time.Millisecond})
 	request := httptest.NewRequest(http.MethodPost, "/v1/improve", strings.NewReader(`{"prompt":"şunu düzelt","answers":["src/parser.go"]}`))
 	response := httptest.NewRecorder()
@@ -37,7 +37,7 @@ func TestImproveFallsBackToLocalRewriteWhenOllamaFails(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Source != "local" || got.OriginalScore == 0 || got.ImprovedScore == 0 || !strings.Contains(got.ImprovedPrompt, "şunu düzelt") {
+	if got.QualityStatus != "failed" || got.OriginalScore == 0 || got.ImprovedPrompt != "" {
 		t.Fatalf("response=%#v", got)
 	}
 }
@@ -47,7 +47,7 @@ func TestImproveUsesOllamaRewrite(t *testing.T) {
 		if r.URL.Path != "/api/generate" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":30,"improved_score":80,"original_criteria":[{"Name":"Görev bağlamı","Score":30}],"improved_criteria":[{"Name":"Görev bağlamı","Score":80}],"questions":[],"improved_prompt":"src/parser.go dosyasındaki boş girdi hatasını düzelt ve JSON hata açıklaması döndür."}`) + `}`))
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"understood_task":"Belirtilen dosyadaki hatayı düzelt","improved_prompt":"src/parser.go dosyasındaki boş girdi hatasını düzelt ve JSON hata açıklaması döndür."}`) + `,"done":true,"done_reason":"stop"}`))
 	}))
 	defer ollama.Close()
 	server := New(Config{OllamaURL: ollama.URL + "/api/generate", OllamaModel: "test-model", Timeout: time.Second})
@@ -64,14 +64,14 @@ func TestImproveUsesOllamaRewrite(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Source != "ollama" || !strings.Contains(got.ImprovedPrompt, "src/parser.go") {
+	if got.Source != "ollama" || got.QualityStatus != "passed" || !strings.Contains(got.ImprovedPrompt, "src/parser.go") {
 		t.Fatalf("response=%#v", got)
 	}
 }
 
-func TestImproveFallsBackWhenOllamaLowersScore(t *testing.T) {
+func TestImproveRejectsIncompleteRewriteRegardlessOfScore(t *testing.T) {
 	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":80,"improved_score":30,"original_criteria":[{"Name":"Kapsam","Score":80}],"improved_criteria":[{"Name":"Kapsam","Score":30}],"questions":[],"improved_prompt":"README güncelle."}`) + `}`))
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"understood_task":"README belgesini güncelle","improved_prompt":"README güncelle."}`) + `,"done":true,"done_reason":"stop"}`))
 	}))
 	defer ollama.Close()
 	server := New(Config{OllamaURL: ollama.URL + "/api/generate", OllamaModel: "test-model", Timeout: time.Second})
@@ -88,14 +88,14 @@ func TestImproveFallsBackWhenOllamaLowersScore(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Source != "local" {
+	if got.QualityStatus != "failed" || got.ImprovedPrompt != "" {
 		t.Fatalf("response=%#v", got)
 	}
 }
 
 func TestImproveFallsBackWhenOllamaKeepsSameScore(t *testing.T) {
 	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":40,"improved_score":40,"original_criteria":[{"Name":"Kapsam","Score":40}],"improved_criteria":[{"Name":"Kapsam","Score":40}],"questions":[],"improved_prompt":"İçerik kapsamı: README dosyasına GitHubdan kurulumu, systemd servisini, Ollama portunun internete açılmaması gerektiğini ve /readyz kontrolünü Türkçe ekle. Değişikliklerin doğruluğunu doğrula."}`) + `}`))
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"understood_task":"README kurulum ve güvenlik içeriğini tamamla","improved_prompt":"İçerik kapsamı: README dosyasına GitHubdan kurulumu, systemd servisini, Ollama portunun internete açılmaması gerektiğini ve /readyz kontrolünü Türkçe ekle. Değişikliklerin doğruluğunu doğrula."}`) + `,"done":true,"done_reason":"stop"}`))
 	}))
 	defer ollama.Close()
 	server := New(Config{OllamaURL: ollama.URL + "/api/generate", OllamaModel: "test-model", Timeout: time.Second})
@@ -140,9 +140,9 @@ func TestImproveReturnsLocalQuestionsBeforeOllama(t *testing.T) {
 	}
 }
 
-func TestImproveFallsBackWhenModelAsksAgainAfterAnswers(t *testing.T) {
+func TestImprovePreservesOriginalWhenModelReturnsNoRewrite(t *testing.T) {
 	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":20,"improved_score":0,"original_criteria":[{"Name":"Eksik hedef","Score":20}],"improved_criteria":[],"questions":["Bir soru daha?"],"improved_prompt":""}`) + `}`))
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"understood_task":"Dosyayı düzelt","improved_prompt":""}`) + `,"done":true,"done_reason":"stop"}`))
 	}))
 	defer ollama.Close()
 	server := New(Config{OllamaURL: ollama.URL + "/api/generate", OllamaModel: "test-model", Timeout: time.Second})
@@ -158,7 +158,7 @@ func TestImproveFallsBackWhenModelAsksAgainAfterAnswers(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Source != "local" {
+	if got.QualityStatus != "failed" || got.ImprovedPrompt != "" {
 		t.Fatalf("response=%#v", got)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/llm"
+	"github.com/EyupEfeDuvarbasi/promptpatch/internal/quality"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
 
@@ -71,8 +72,8 @@ func LocalQuestionsWithContext(result score.Result, prompt, chatContext string) 
 	if result.NeedsClarifying && (len(questions) == 0 || result.Kind != score.BugFix) && !contextHasTaskContext(contextText) {
 		questions = append(questions, "Tam olarak neyin değişmesini istiyorsunuz?")
 	}
-	if len(questions) > 2 {
-		return questions[:2]
+	if len(questions) > 1 {
+		return questions[:1]
 	}
 	return questions
 }
@@ -141,7 +142,7 @@ func LocalImprove(prompt string, questions, answers []string) string {
 	return LocalImproveWithContext(prompt, "", questions, answers)
 }
 
-// LocalImproveWithContext preserves the latest user context when no model backend is available.
+// LocalImproveWithContext is the deterministic formatter used by corpus tooling.
 func LocalImproveWithContext(prompt, chatContext string, questions, answers []string) string {
 	task, criteria := splitAcceptanceCriteria(prompt)
 	sections := []string{"# " + promptKind(task), "\n## Amaç\n" + strings.TrimSpace(task)}
@@ -163,20 +164,7 @@ func LocalImproveWithContext(prompt, chatContext string, questions, answers []st
 
 // ValidRewrite is the shared acceptance gate for every backend.
 func ValidRewrite(original, candidate string) bool {
-	candidate = strings.TrimSpace(candidate)
-	if len(strings.Fields(candidate)) < 8 || normalizeText(original) == normalizeText(candidate) {
-		return false
-	}
-	lower := normalizeText(candidate)
-	if strings.Contains(lower, "soru:") || strings.Contains(lower, "cevap:") {
-		return false
-	}
-	for _, fact := range concreteFacts(original) {
-		if !strings.Contains(lower, normalizeText(fact)) {
-			return false
-		}
-	}
-	return true
+	return len(quality.RewriteIssues(original, original, candidate, concreteFacts(original))) == 0
 }
 
 func concreteFacts(value string) []string {

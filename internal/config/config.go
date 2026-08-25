@@ -14,6 +14,8 @@ import (
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/llm"
 )
 
+const chatContextWords = 3000
+
 type Config struct {
 	Provider         llm.Provider
 	APIKey           string
@@ -138,9 +140,10 @@ func Load(path string) (Config, error) {
 			ChatContextWords: persisted.ChatContextWords, ChatContextSet: persisted.ChatContextSet,
 			ServerURL: persisted.ServerURL, ServerSet: persisted.ServerSet, RemoteContext: persisted.RemoteContext,
 		}
-		if config.ChatContextWords != 0 && config.ChatContextWords != 800 && config.ChatContextWords != 2000 && config.ChatContextWords != 4000 {
+		if !validContextWords(config.ChatContextWords) {
 			return Config{}, errors.New("geçersiz chat_context_words")
 		}
+		config.ChatContextWords = migratedContextWords(config.ChatContextWords)
 		if config.Provider != "" && !isConfigurableProvider(config.Provider) {
 			return Config{}, fmt.Errorf("unsupported provider %q", config.Provider)
 		}
@@ -161,10 +164,10 @@ func Load(path string) (Config, error) {
 			config.Model = strings.TrimSpace(value)
 		case "chat_context_words":
 			var words int
-			if _, err := fmt.Sscan(value, &words); err != nil || (words != 0 && words != 800 && words != 2000 && words != 4000) {
+			if _, err := fmt.Sscan(value, &words); err != nil || !validContextWords(words) {
 				return Config{}, errors.New("geçersiz chat_context_words")
 			}
-			config.ChatContextWords = words
+			config.ChatContextWords = migratedContextWords(words)
 		case "chat_context_configured":
 			config.ChatContextSet = strings.TrimSpace(value) == "true"
 		case "server_url":
@@ -181,6 +184,17 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("unsupported provider %q", config.Provider)
 	}
 	return config, nil
+}
+
+func validContextWords(words int) bool {
+	return words == 0 || words == 800 || words == 2000 || words == chatContextWords || words == 4000
+}
+
+func migratedContextWords(words int) int {
+	if words > 0 {
+		return chatContextWords
+	}
+	return 0
 }
 
 func Save(path string, config Config) error {
@@ -270,7 +284,7 @@ func ConfigureRemoteServer(path string, in io.Reader, out io.Writer) (Config, er
 	return config, nil
 }
 
-// ConfigureChatContext asks once during setup how much nearby conversation may be used.
+// ConfigureChatContext asks once whether nearby conversation may be used.
 func ConfigureChatContext(path string, in io.Reader, out io.Writer) (Config, error) {
 	config, err := Load(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -279,20 +293,18 @@ func ConfigureChatContext(path string, in io.Reader, out io.Writer) (Config, err
 	if config.ChatContextSet {
 		return config, nil
 	}
-	fmt.Fprintln(out, "Yakın sohbet bağlamı seçin:")
+	fmt.Fprintln(out, "Yakın sohbet bağlamı kullanılsın mı?")
 	fmt.Fprintln(out, "1) Kapalı")
-	fmt.Fprintln(out, "2) Kısa — son 800 kelime")
-	fmt.Fprintln(out, "3) Dengeli — son 2000 kelime (önerilen)")
-	fmt.Fprintln(out, "4) Geniş — son 4000 kelime")
+	fmt.Fprintln(out, "2) Açık — son 3000 kelime (önerilen)")
 	fmt.Fprint(out, "> ")
 	choice, err := buffered(in).ReadString('\n')
 	if err != nil && len(choice) == 0 {
 		return Config{}, errors.New("sohbet bağlamı seçimi gerekli")
 	}
-	options := map[string]int{"1": 0, "2": 800, "3": 2000, "4": 4000}
+	options := map[string]int{"1": 0, "2": chatContextWords}
 	choice = strings.TrimSpace(choice)
 	if choice == "" {
-		choice = "3"
+		choice = "2"
 	}
 	words, ok := options[choice]
 	if !ok {

@@ -46,7 +46,7 @@ func TestRunPrintsHelp(t *testing.T) {
 
 func TestLocalQuestionsAreBounded(t *testing.T) {
 	questions := LocalQuestions(score.Result{NeedsContext: true, NeedsFormat: true, NeedsClarifying: true})
-	if len(questions) != 2 {
+	if len(questions) != 1 {
 		t.Fatalf("questions=%v", questions)
 	}
 }
@@ -71,7 +71,7 @@ func TestLocalQuestionsAskOnlyMissingOutputWithContext(t *testing.T) {
 
 func TestLocalQuestionsAdaptToTaskType(t *testing.T) {
 	questions := LocalQuestions(score.Result{Kind: score.Performance, NeedsContext: true, NeedsFormat: true})
-	if len(questions) != 2 || !strings.Contains(questions[0], "iş yükü") || !strings.Contains(questions[1], "çıktı") {
+	if len(questions) != 1 || !strings.Contains(questions[0], "iş yükü") {
 		t.Fatalf("questions=%q", questions)
 	}
 }

@@ -16,7 +16,7 @@ Alanlar:
 - `style`: promptun yazım biçimi
 - `prompt`: kullanıcının girdiği özgün metin
 - `expected_score`: hedef puan bandı; kesin değer değil, kalite beklentisi
-- `questions`: beklenen en fazla iki soru veya boş liste
+- `questions`: beklenen en fazla bir soru veya boş liste
 - `must_keep`: iyileştirme sırasında kaybolmaması gereken anlamlar
 - `must_not_invent`: modelin varsayım yapmaması gereken alanlar
 
@@ -27,3 +27,18 @@ koruma davranışını ölçmektir.
 Kapsam: hata düzeltme, özellik, refactor, performans, araştırma/planlama,
 güvenlik, API, veri geçişi, test, dokümantasyon, frontend ve terminal işleri;
 ayrıca belirsiz, çelişkili, eksik, yazım hatalı ve zaten iyi promptlar.
+
+`model-cases.jsonl`, CLI modelinin gerçek yeniden yazma kalitesini ölçen ayrı
+60 vakalık korpustur. Kapsam matrisi ve değerlendirme yöntemi
+`model-coverage.md` dosyasındadır. Ücretli benchmark önce çekirdek 20 vakada
+çalıştırılmalıdır:
+
+```bash
+go run ./tools/promptbench -tier core -model gpt-5.6-terra -reasoning medium
+```
+
+Yalnızca seçilen yapılandırmanın kalan 40 vakası:
+
+```bash
+go run ./tools/promptbench -tier full -model gpt-5.6-terra -reasoning medium
+```

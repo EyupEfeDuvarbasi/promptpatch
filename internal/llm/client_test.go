@@ -101,7 +101,7 @@ func TestImproveSendsChatContextAsReference(t *testing.T) {
 
 func TestOllamaImproveReturnsRewrite(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"improved_prompt":"src/parser.go dosyasını düzelt."}`) + `}`))
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"understood_task":"Belirtilen dosyayı düzelt","improved_prompt":"src/parser.go dosyasını düzelt."}`) + `,"done":true,"done_reason":"stop"}`))
 	}))
 	defer server.Close()
 	client, err := New(Ollama, "")
@@ -130,7 +130,7 @@ func TestOllamaImproveUsesInstalledModelWhenDefaultIsMissing(t *testing.T) {
 			t.Fatal(err)
 		}
 		requestedModel = request.Model
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"improved_prompt":"src/parser.go dosyasını düzelt."}`) + `}`))
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"understood_task":"Belirtilen dosyayı düzelt","improved_prompt":"src/parser.go dosyasını düzelt."}`) + `,"done":true,"done_reason":"stop"}`))
 	}))
 	defer server.Close()
 	client, err := New(Ollama, "")
@@ -147,61 +147,74 @@ func TestOllamaImproveUsesInstalledModelWhenDefaultIsMissing(t *testing.T) {
 	}
 }
 
-func TestDynamicOllamaImproveReturnsQuestions(t *testing.T) {
+func TestInstalledOllamaModelPrefersQwenThenGemma(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":20,"improved_score":0,"original_criteria":[{"Name":"Eksik hedef","Score":20}],"improved_criteria":[],"questions":["Hangi dosya değişecek?","Beklenen davranış nedir?"],"improved_prompt":""}`) + `}`))
+		_, _ = w.Write([]byte(`{"models":[{"name":"gemma3:4b"},{"name":"qwen2.5:7b"}]}`))
 	}))
 	defer server.Close()
-	client, err := New(Ollama, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.URL = server.URL
-	client.Model = "test-model"
-	result, err := client.DynamicImproveWithContext(context.Background(), "şunu düzelt", "", nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Questions) != 2 || result.ImprovedPrompt != "" {
-		t.Fatalf("result=%#v", result)
+	client, _ := New(Ollama, "")
+	client.URL = server.URL + "/api/generate"
+	model, err := client.InstalledOllamaModel(context.Background())
+	if err != nil || model != "qwen2.5:7b" {
+		t.Fatalf("model=%q err=%v", model, err)
 	}
 }
 
-func TestDynamicOllamaImproveReturnsRewrite(t *testing.T) {
+func TestOllamaImproveRetriesTruncatedOutputOnce(t *testing.T) {
+	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":40,"improved_score":85,"original_criteria":[{"Name":"Bağlam","Score":40}],"improved_criteria":[{"Name":"Bağlam","Score":85}],"questions":[],"improved_prompt":"src/parser.go dosyasındaki parseInput fonksiyonunda boş girdi için JSON hata açıklaması döndür."}`) + `}`))
+		attempts++
+		var request struct {
+			Prompt  string         `json:"prompt"`
+			Options map[string]int `json:"options"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Options["num_ctx"] != 8192 {
+			t.Fatalf("options=%v", request.Options)
+		}
+		if attempts == 1 {
+			if request.Options["num_predict"] != 1536 {
+				t.Fatalf("first options=%v", request.Options)
+			}
+			_, _ = w.Write([]byte(`{"response":"{\"understood_task\":\"Plan oluştur\",\"improved_prompt\":\"yarım","done":true,"done_reason":"length"}`))
+			return
+		}
+		if request.Options["num_predict"] != 2048 || !strings.Contains(request.Prompt, "token sınırında kesildi") {
+			t.Fatalf("retry request=%#v", request)
+		}
+		payload := `{"understood_task":"İki projeyi birleştirme planı oluştur","improved_prompt":"PromptPatch ile PromptLens projelerini tek bir ürün hâline getirmek için eksiksiz ve uygulanabilir bir plan oluştur."}`
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(payload) + `,"done":true,"done_reason":"stop"}`))
 	}))
 	defer server.Close()
-	client, err := New(Ollama, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.URL = server.URL
-	client.Model = "test-model"
-	result, err := client.DynamicImproveWithContext(context.Background(), "şunu düzelt", "", []string{"Hangi dosya?"}, []string{"src/parser.go"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.ImprovedScore != 85 || !strings.Contains(result.ImprovedPrompt, "src/parser.go") {
-		t.Fatalf("result=%#v", result)
+	client, _ := New(Ollama, "")
+	client.URL, client.Model = server.URL, "test-model"
+	result, err := client.ImproveWithContext(context.Background(), "PromptPatch ile PromptLens projelerini birleştirmek için plan oluştur.", "", nil, nil)
+	if err != nil || result.QualityStatus != "corrected" || attempts != 2 {
+		t.Fatalf("result=%#v attempts=%d err=%v", result, attempts, err)
 	}
 }
 
-func TestParseOllamaRewriteAcceptsRawMarkdown(t *testing.T) {
-	if got := parseOllamaRewrite("```markdown\n## Görev\nParserı düzelt.\n```"); got != "## Görev\nParserı düzelt." {
-		t.Fatalf("rewrite=%q", got)
-	}
-	if got := parseOllamaRewrite(`{"improved_prompt":"Parserı düzelt."}`); got != "Parserı düzelt." {
-		t.Fatalf("rewrite=%q", got)
-	}
-	if got := parseOllamaRewrite("Here is the rewritten prompt:\n\n**Fix Bug**\n\nPlease note that this is only formatting."); got != "**Fix Bug**" {
-		t.Fatalf("rewrite=%q", got)
+func TestOllamaImproveRejectsBothBadAttempts(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		payload := `{"understood_task":"Plan oluştur","improved_prompt":"Bu, oldukça karmaşık bir projedir. Başarılı olmak için 2 hafta ayır."}`
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(payload) + `,"done":true,"done_reason":"stop"}`))
+	}))
+	defer server.Close()
+	client, _ := New(Ollama, "")
+	client.URL, client.Model = server.URL, "test-model"
+	_, err := client.ImproveWithContext(context.Background(), "PromptPatch ve PromptLens için plan oluştur.", "", nil, nil)
+	if err == nil || attempts != 2 || !strings.Contains(err.Error(), "genel bir giriş") {
+		t.Fatalf("attempts=%d err=%v", attempts, err)
 	}
 }
 
 func TestRequiredFactsPreserveAnswersAndTechnicalNumbers(t *testing.T) {
-	facts := requiredFacts("jetson orin nano 8 gb üzerinde 10 kamera ve 20 fps hedefle", []string{"md dosyası"})
-	for _, want := range []string{"md dosyası", "jetson orin nano 8 gb", "10", "20"} {
+	facts := requiredFacts("promptpatchi PromptLens ile birleştir; src/parser.go ve jetson orin nano 8 gb üzerinde 10 kamera ve 20 fps hedefle", []string{"md dosyası"})
+	for _, want := range []string{"md dosyası", "promptpatch", "promptlens", "src/parser.go", "jetson orin nano 8 gb", "10", "20"} {
 		if !strings.Contains(strings.Join(facts, "|"), want) {
 			t.Fatalf("facts=%q, missing %q", facts, want)
 		}
@@ -295,7 +308,7 @@ func TestLiveOllamaRewrite(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	assessment, err := client.Improve(ctx, "şunu düzelt", []string{"Hangi dosya?", "Beklenen davranış ne?"}, []string{"src/parser.go", "Boş girdi hata dönsün"})
+	assessment, err := client.Improve(ctx, "şunu düzelt", []string{"Hangi dosya ve beklenen davranış nedir?"}, []string{"src/parser.go dosyasında boş girdi hata dönsün"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,6 +324,28 @@ func TestLiveOllamaRewrite(t *testing.T) {
 	if strings.Contains(strings.ToLower(assessment.ImprovedPrompt), "here is") {
 		t.Fatalf("model preamble leaked into rewrite: %q", assessment.ImprovedPrompt)
 	}
+}
+
+func TestLiveOllamaPromptPatchPromptLensRegression(t *testing.T) {
+	if os.Getenv("PROMPTCHECK_OLLAMA") != "1" {
+		t.Skip("set PROMPTCHECK_OLLAMA=1 to call the local model")
+	}
+	client, err := New(Ollama, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	chatContext := "USER: PromptPatch ve PromptLens projelerinin uyumluluğunu araştır.\n\nUSER: API entegrasyonu sorun değil; iki projeyi tek bir ürün hâline getirmek istiyorum. Plan oluşturmadan önce uyumluluğu tekrar kontrol et."
+	assessment, err := client.ImproveWithContext(ctx, "promptpatchi ve promptlensi birleştirmek için güzel bir plan oluşturalım", chatContext, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lower := strings.ToLower(assessment.ImprovedPrompt)
+	if !strings.Contains(lower, "promptpatch") || !strings.Contains(lower, "promptlens") || strings.HasPrefix(lower, "bu, oldukça karmaşık") || strings.Contains(lower, "önceden belirlenen") || strings.Contains(lower, "zorunlu ifadeler") {
+		t.Fatalf("rewrite=%q", assessment.ImprovedPrompt)
+	}
+	t.Logf("quality=%s rewrite=%s", assessment.QualityStatus, assessment.ImprovedPrompt)
 }
 
 func TestLiveOllamaPreservesOpposedConstraints(t *testing.T) {

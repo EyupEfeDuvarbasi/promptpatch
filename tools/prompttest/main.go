@@ -36,7 +36,7 @@ func main() {
 		total++
 		original := score.Evaluate(sample.Prompt)
 		improved := cli.LocalImprove(sample.Prompt, nil, nil)
-		ok := original.Score >= sample.ExpectedScore[0] && original.Score <= sample.ExpectedScore[1] && len(cli.LocalQuestions(original)) <= 2
+		ok := original.Score >= sample.ExpectedScore[0] && original.Score <= sample.ExpectedScore[1] && len(cli.LocalQuestions(original)) <= 1
 		for _, want := range sample.MustKeep {
 			if concrete(want) && !keepsConcreteFacts(improved, want) {
 				ok = false

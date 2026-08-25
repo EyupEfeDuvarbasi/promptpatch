@@ -216,27 +216,29 @@ func TestImproveWithRemoteServerUsesConfiguredAPI(t *testing.T) {
 	}
 }
 
-func TestImproveWithRemoteServerRejectsRegressedScore(t *testing.T) {
+func TestImproveWithRemoteServerAcceptsQualityRewriteDespiteLowerStructuralScore(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"original_score":80,"improved_score":30,"improved_prompt":"src/parser.go dosyasındaki boş girdi hatasını düzelt ve JSON hata açıklaması döndür.","source":"ollama"}`))
 	}))
 	defer server.Close()
 	t.Setenv("PROMPTPATCH_API_URL", server.URL)
+	t.Setenv("PROMPTPATCH_API_TOKEN", "test-token")
 
-	if response, ok := improveWithRemoteServer(context.Background(), "şunu düzelt", "", nil, nil); ok {
-		t.Fatalf("regressed server rewrite should be rejected: %#v", response)
+	if response, ok := improveWithRemoteServer(context.Background(), "şunu düzelt", "", nil, nil); !ok || response.ImprovedPrompt == "" {
+		t.Fatalf("quality rewrite should not be rejected by structural score: %#v", response)
 	}
 }
 
-func TestImproveWithRemoteServerRejectsSameScore(t *testing.T) {
+func TestImproveWithRemoteServerAcceptsSameStructuralScore(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"original_score":24,"improved_score":24,"improved_prompt":"src/parser.go dosyasındaki boş girdi hatasını düzelt ve JSON hata açıklaması döndür.","source":"local"}`))
 	}))
 	defer server.Close()
 	t.Setenv("PROMPTPATCH_API_URL", server.URL)
+	t.Setenv("PROMPTPATCH_API_TOKEN", "test-token")
 
-	if response, ok := improveWithRemoteServer(context.Background(), "şunu düzelt", "", nil, nil); ok {
-		t.Fatalf("same-score server rewrite should be rejected: %#v", response)
+	if response, ok := improveWithRemoteServer(context.Background(), "şunu düzelt", "", nil, nil); !ok || response.ImprovedPrompt == "" {
+		t.Fatalf("same-score quality rewrite should be accepted: %#v", response)
 	}
 }
 
@@ -258,17 +260,22 @@ func TestShowableImprovementRequiresScoreIncrease(t *testing.T) {
 	if showableImprovement(better) {
 		t.Fatal("blank rewrite must not be shown")
 	}
+	better.Prompt = same.Prompt
+	better.QualityStatus = "failed"
+	if showableImprovement(better) {
+		t.Fatal("failed quality status must not be shown")
+	}
 }
 
 func TestImproveWithBestAvailableAsksLocalQuestionsBeforeBackend(t *testing.T) {
 	questions := []string{}
 	_, nextQuestions, complete := improveWithBestAvailable(context.Background(), "şunu düzelt", "", questions, nil)
-	if !complete || len(nextQuestions) == 0 || len(nextQuestions) > 2 {
+	if !complete || len(nextQuestions) == 0 || len(nextQuestions) > 1 {
 		t.Fatalf("complete=%t questions=%v", complete, nextQuestions)
 	}
 }
 
-func TestImproveWithBestAvailablePassesAnswersToLocalFallback(t *testing.T) {
+func TestImproveWithBestAvailablePreservesOriginalWhenModelFails(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
 	defer cancel()
 	questions := []string{"Hangi dosya?", "Beklenen sonuç?"}
@@ -277,8 +284,8 @@ func TestImproveWithBestAvailablePassesAnswersToLocalFallback(t *testing.T) {
 	if !complete || len(nextQuestions) != 0 {
 		t.Fatalf("complete=%t questions=%v", complete, nextQuestions)
 	}
-	if !strings.Contains(improvement.Prompt, "src/parser.go") || !strings.Contains(improvement.Prompt, "boş girdi hata dönsün") {
-		t.Fatalf("fallback lost answers: %q", improvement.Prompt)
+	if improvement.Prompt != "" || improvement.QualityStatus != "failed" {
+		t.Fatalf("improvement=%#v", improvement)
 	}
 }
 

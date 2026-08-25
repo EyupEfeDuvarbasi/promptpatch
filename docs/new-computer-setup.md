@@ -8,7 +8,7 @@
 
 PromptPatch Codex'i kurmaz; Codex'in `EDITOR`/`VISUAL` akışına bağlanır.
 
-Windows'ta tüm kurulum ve local fallback yapılandırması için depo kökündeki
+Windows'ta yerel model yapılandırması için depo kökündeki
 scripti tek komutla çalıştırabilirsiniz:
 
 ```powershell
@@ -59,7 +59,7 @@ promptcheck setup-codex
 Kurulum sorularında ilk test için:
 
 1. Yakın sohbet bağlamı: `1` (kapalı)
-2. Merkezi server: `N` (local fallback)
+2. Merkezi server: `N` (yerel Ollama)
 
 Yeni PowerShell açın ve kontrol edin:
 
@@ -109,7 +109,7 @@ Ollama kurmak ilk test için zorunlu değildir. Sistem şu sırayı kullanır:
 
 1. Yapılandırılmış PromptPatch server.
 2. Yerel Ollama.
-3. Deterministik yerel fallback.
+3. Güvenilir çıktı üretilemezse özgün promptun korunması.
 
 Codex'i açın, kısa bir prompt yazın ve `Ctrl-G` basın:
 
@@ -119,18 +119,18 @@ Codex'i açın, kısa bir prompt yazın ve `Ctrl-G` basın:
 
 Beklenen davranış:
 
-- En fazla iki karar değiştirici soru sorulur.
+- En fazla bir karar değiştirici soru sorulur.
 - Sorular backend'den bağımsız olarak yerel eksik-bilgi kontrolüyle seçilir.
 - Özgün ve iyileştirilmiş prompt gösterilir.
 - `↑`/`↓` ile seçim yapılır.
 - `Enter` seçilen promptu uygular.
 - `Esc` özgün promptu korur.
-- Ollama veya server yoksa local fallback devreye girer.
+- Ollama veya server yoksa özgün prompt korunur.
 
 ## Ollama ile local model testi
 
 ```sh
-ollama pull gemma3:4b
+ollama pull qwen2.5:7b
 curl http://127.0.0.1:11434/api/tags
 ```
 
@@ -143,14 +143,14 @@ Invoke-RestMethod http://127.0.0.1:11434/api/tags
 Model seçmek için:
 
 ```powershell
-$env:PROMPTPATCH_OLLAMA_MODEL = "gemma3:4b"
+$env:PROMPTPATCH_OLLAMA_MODEL = "qwen2.5:7b"
 codex
 ```
 
 Linux/macOS:
 
 ```sh
-export PROMPTPATCH_OLLAMA_MODEL=gemma3:4b
+export PROMPTPATCH_OLLAMA_MODEL=qwen2.5:7b
 codex
 ```
 
@@ -184,8 +184,8 @@ Alternatif olarak `promptcheck setup-codex` sırasında merkezi server sorusuna
 `PROMPTPATCH_API_TOKEN` ortam değişkeniyle verin. Sohbet bağlamı açıksa,
 uzak server'a gönderim için ayrıca onay istenir.
 
-Remote server erişilemezse istemci local Ollama'ya, o da yoksa local fallback'e
-geçer.
+Remote server erişilemezse istemci yerel Ollama'yı dener. Güvenilir bir çıktı
+üretilemezse özgün promptu değiştirmez ve kalite hatasını gösterir.
 
 ## Bağlamı sonradan açma
 
@@ -195,8 +195,8 @@ geçer.
 promptcheck configure-context
 ```
 
-İlk test için `2` (800 kelime) veya `3` (2.000 kelime) seçin. Bağlam açıldığında
-PromptPatch mevcut proje oturumundaki en yeni kullanıcı/yardımcı mesajlarını
+Bağlamı açtığınızda son 3.000 kelime kullanılır. PromptPatch mevcut proje
+oturumundaki en yeni kullanıcı/yardımcı mesajlarını
 referans olarak kullanır. Bu içerik seçilen remote server veya Ollama backend'ine
 gönderilebilir.
 
@@ -232,8 +232,8 @@ Windows'ta ilk `codex` sonucu `Function codex` olmalıdır.
 ### Ollama çalışmıyor
 
 `curl http://127.0.0.1:11434/api/tags` veya PowerShell eşdeğerini çalıştırın.
-`ollama list` ile modelin kurulu olduğunu kontrol edin. Ollama yoksa local
-fallback yine çalışır.
+`ollama list` ile modelin kurulu olduğunu kontrol edin. Qwen yoksa PromptPatch
+kurulu `gemma3:4b` modelini kullanabilir.
 
 ### Remote server yetkisiz hatası
 
@@ -242,6 +242,6 @@ server bind adresinde token zorunludur.
 
 ### Özgün prompt korunuyor
 
-Model çıktısı yerel skoru düşürmüş veya somut gereksinimleri kaybetmiş olabilir.
+Model çıktısı kesilmiş, somut gereksinimleri kaybetmiş veya kaynakta olmayan bilgi eklemiş olabilir.
 Bu, güvenilir olmayan çıktının otomatik uygulanmasını önleyen beklenen güvenlik
 davranışıdır.

@@ -78,7 +78,7 @@ Aşağıdaki heuristikleri kontrol eder ve her biri için ayrı bir alt-puan ür
 - **Bağlam eksikliği işaretleri:** Dosya adı, fonksiyon adı, teknoloji/dil belirtilmemişse işaretlenir.
 - **Format/çıktı belirtimi eksikliği:** Kullanıcı ne formatta çıktı istediğini belirtmemişse işaretlenir.
 
-Bu katman en fazla iki açıklayıcı soru seçer ve yanıtları “Amaç / Bağlam / Beklenen sonuç / Kabul kriterleri” bölümlerine derler; bilinmeyen teknik ayrıntıları uydurmaz.
+Bu katman en fazla bir açıklayıcı soru seçer ve yanıtları “Amaç / Bağlam / Beklenen sonuç / Kabul kriterleri” bölümlerine derler; bilinmeyen teknik ayrıntıları uydurmaz.
 
 ### 4.2 LLM Tabanlı Katman (isteğe bağlı dinamik değerlendirme)
 Kullanıcı `--model` ile özellikle etkinleştirirse, kural tabanlı katmanın tespit edemeyeceği anlamsal kaliteyi değerlendirir:
@@ -111,14 +111,14 @@ Bu komut Codex'in `EDITOR`/`VISUAL` akışından çağrılır.
 
 ### 5.2 Kullanıcı akışı
 
-Prompt editöre aktarılır, en fazla iki karar değiştirici soru sorulur, özgün ve
+Prompt editöre aktarılır, en fazla bir karar değiştirici soru sorulur, özgün ve
 iyileştirilmiş sürüm karşılaştırılır; kullanıcı seçerse dosyaya yazılır.
 
 ### 5.3 Tetikleme (Kısayol)
 
 **MVP Kararı: Shell-binding veya host CLI'nin standart editör akışı (global OS hotkey DEĞİL).**
 
-Kurulum sırasında kullanıcının `.bashrc`/`.zshrc` dosyasına eklenen bir shell fonksiyonu/keybinding aracılığıyla çalışabilir. Host CLI standart `EDITOR`/`VISUAL` akışını destekliyorsa PromptPatch bu editör olarak da çalışır: host'un verdiği mevcut taslak metni aynı terminalde analiz eder, en fazla iki soru sorar ve kullanıcının seçtiği sürümü aynı dosyaya geri yazar. Örneğin Codex CLI'nin `Ctrl-G` prompt editörü bu akışı kullanır. Global, arka planda çalışan bir OS-seviye daemon **MVP kapsamında yoktur** — bu, kurulum karmaşıklığını ve platformlar arası (Linux/macOS/Windows) farklı API gereksinimlerini MVP'den çıkarmak için bilinçli bir sınırlamadır.
+Kurulum sırasında kullanıcının `.bashrc`/`.zshrc` dosyasına eklenen bir shell fonksiyonu/keybinding aracılığıyla çalışabilir. Host CLI standart `EDITOR`/`VISUAL` akışını destekliyorsa PromptPatch bu editör olarak da çalışır: host'un verdiği mevcut taslak metni aynı terminalde analiz eder, en fazla bir soru sorar ve kullanıcının seçtiği sürümü aynı dosyaya geri yazar. Örneğin Codex CLI'nin `Ctrl-G` prompt editörü bu akışı kullanır. Global, arka planda çalışan bir OS-seviye daemon **MVP kapsamında yoktur** — bu, kurulum karmaşıklığını ve platformlar arası (Linux/macOS/Windows) farklı API gereksinimlerini MVP'den çıkarmak için bilinçli bir sınırlamadır.
 
 ### 5.4 Örnek Çıktı (Kısa Mod)
 

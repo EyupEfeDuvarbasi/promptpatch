@@ -35,6 +35,8 @@ type ImproveResponse struct {
 	Questions      []string          `json:"questions,omitempty"`
 	ImprovedPrompt string            `json:"improved_prompt"`
 	Source         string            `json:"source"`
+	QualityStatus  string            `json:"quality_status,omitempty"`
+	QualityMessage string            `json:"quality_message,omitempty"`
 }
 
 func (c Client) Improve(ctx context.Context, request ImproveRequest) (ImproveResponse, error) {
@@ -74,7 +76,7 @@ func (c Client) Improve(ctx context.Context, request ImproveRequest) (ImproveRes
 	if err := json.Unmarshal(responseBody, &improved); err != nil {
 		return ImproveResponse{}, fmt.Errorf("PromptPatch server yanıtı çözümlenemedi: %w", err)
 	}
-	if strings.TrimSpace(improved.ImprovedPrompt) == "" && len(improved.Questions) == 0 {
+	if strings.TrimSpace(improved.ImprovedPrompt) == "" && len(improved.Questions) == 0 && improved.QualityStatus != "failed" {
 		return ImproveResponse{}, fmt.Errorf("PromptPatch server iyileştirilmiş prompt döndürmedi")
 	}
 	return improved, nil

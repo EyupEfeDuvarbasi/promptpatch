@@ -118,13 +118,13 @@ function Install-OllamaIfRequested {
     }
 
     if (-not $ollama) {
-        throw "Ollama kuruldu ancak mevcut PATH'e yüklenmedi. Yeni PowerShell açıp ollama pull gemma3:4b çalıştırın."
+        throw "Ollama kuruldu ancak mevcut PATH'e yüklenmedi. Yeni PowerShell açıp ollama pull qwen2.5:7b çalıştırın."
     }
 
-    Write-Step "gemma3:4b modeli kontrol ediliyor."
-    & $ollama pull gemma3:4b
+    Write-Step "qwen2.5:7b modeli kontrol ediliyor."
+    & $ollama pull qwen2.5:7b
     if ($LASTEXITCODE -ne 0) {
-        throw "gemma3:4b modeli indirilemedi."
+        throw "qwen2.5:7b modeli indirilemedi."
     }
 }
 
@@ -144,7 +144,7 @@ function Configure-Codex([string]$PromptcheckPath) {
     }
     else {
         $setupInput = "1" + $newline + "N" + $newline
-        Write-Step "Codex entegrasyonu local fallback ile yapılandırılıyor."
+        Write-Step "Codex entegrasyonu yerel Ollama ile yapılandırılıyor."
     }
 
     $setupInput | & $PromptcheckPath setup-codex

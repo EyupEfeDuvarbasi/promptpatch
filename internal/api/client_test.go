@@ -45,3 +45,14 @@ func TestImproveReturnsServerErrorMessage(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestImproveAcceptsFailedQualityStatusWithoutRewrite(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"original_score":40,"improved_prompt":"","source":"ollama","quality_status":"failed","quality_message":"çıktı tamamlanmadı"}`))
+	}))
+	defer server.Close()
+	response, err := (Client{URL: server.URL}).Improve(context.Background(), ImproveRequest{Prompt: "şunu düzelt"})
+	if err != nil || response.QualityStatus != "failed" || response.QualityMessage == "" {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+}

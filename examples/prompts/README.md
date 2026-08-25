@@ -9,6 +9,9 @@ bağlam, kısıt ve çıktı biçimi ilkelerinden türetilmiştir:
 
 `cases.jsonl` dosyasında her satır bağımsız bir JSON örneğidir.
 
+Tüm promptları JSON okumadan incelemek için [senaryolar.md](senaryolar.md)
+dosyasını açın.
+
 Alanlar:
 
 - `id`: sabit örnek kimliği

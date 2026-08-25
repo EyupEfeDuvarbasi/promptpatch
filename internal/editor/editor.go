@@ -61,19 +61,25 @@ func Run(path string) error {
 	}
 	contextSource := comparisonSource(chatContext.Source, improvement.Source)
 	if !showableImprovement(improvement) {
-		return rewriteFailed(fmt.Errorf("üretilen prompt güvenilir değil: %s -> %s", scoreBadge(improvement.Original.Score), scoreBadge(improvement.Improved.Score)))
+		message := improvement.QualityMessage
+		if message == "" {
+			message = "üretilen prompt kalite kontrolünden geçmedi"
+		}
+		return rewriteFailed(fmt.Errorf("%s", message))
 	}
-	if !chooseComparison(prompt, improvement.Original, improvement.Prompt, improvement.Improved, contextSource) {
+	if !chooseComparison(prompt, improvement.Original, improvement.Prompt, improvement.Improved, contextSource, improvement.QualityStatus) {
 		return nil
 	}
 	return os.WriteFile(path, []byte(improvement.Prompt+"\n"), 0600)
 }
 
 type editorImprovement struct {
-	Prompt   string
-	Source   string
-	Original score.Result
-	Improved score.Result
+	Prompt         string
+	Source         string
+	Original       score.Result
+	Improved       score.Result
+	QualityStatus  string
+	QualityMessage string
 }
 
 func improveWithMascot(ctx context.Context, prompt, chatContext string, questions, answers []string) (editorImprovement, []string, bool) {
@@ -111,17 +117,18 @@ func improveWithBestAvailable(ctx context.Context, prompt, chatContext string, q
 	if response, ok := improveWithRemoteServer(ctx, prompt, chatContext, questions, answers); ok {
 		if len(response.Questions) > 0 && strings.TrimSpace(response.ImprovedPrompt) == "" {
 			return editorImprovement{}, response.Questions, true
-		} else if strings.TrimSpace(response.ImprovedPrompt) != "" {
+		} else if strings.TrimSpace(response.ImprovedPrompt) != "" || response.QualityStatus == "failed" {
 			return improvementFromAPI(response), nil, true
 		}
 	}
-	if improved, ok := improveWithLocalOllama(ctx, prompt, chatContext, questions, answers); ok {
+	if assessment, err := improveWithLocalOllama(ctx, prompt, chatContext, questions, answers); err == nil {
+		improved := assessment.ImprovedPrompt
 		original := score.Evaluate(prompt)
 		improvedScore := score.Evaluate(improved)
-		return editorImprovement{Prompt: improved, Source: "ollama", Original: original, Improved: improvedScore}, nil, true
+		return editorImprovement{Prompt: improved, Source: "ollama", Original: original, Improved: improvedScore, QualityStatus: assessment.QualityStatus}, nil, true
+	} else {
+		return editorImprovement{Source: "ollama", Original: score.Evaluate(prompt), QualityStatus: "failed", QualityMessage: err.Error()}, nil, true
 	}
-	improved := cli.LocalImproveWithContext(prompt, chatContext, questions, answers)
-	return editorImprovement{Prompt: improved, Source: "Yerel fallback", Original: score.Evaluate(prompt), Improved: score.Evaluate(improved)}, nil, true
 }
 
 func improveWithRemoteServer(ctx context.Context, prompt, chatContext string, questions, answers []string) (api.ImproveResponse, bool) {
@@ -143,10 +150,7 @@ func improveWithRemoteServer(ctx context.Context, prompt, chatContext string, qu
 		return api.ImproveResponse{}, false
 	}
 	if strings.TrimSpace(response.ImprovedPrompt) == "" {
-		return response, len(response.Questions) > 0
-	}
-	if (response.ImprovedScore != 0 || response.OriginalScore != 0) && response.ImprovedScore < response.OriginalScore {
-		return api.ImproveResponse{}, false
+		return response, len(response.Questions) > 0 || response.QualityStatus == "failed"
 	}
 	if !cli.ValidRewrite(prompt, response.ImprovedPrompt) {
 		return api.ImproveResponse{}, false
@@ -154,33 +158,32 @@ func improveWithRemoteServer(ctx context.Context, prompt, chatContext string, qu
 	return response, true
 }
 
-func improveWithLocalOllama(ctx context.Context, prompt, chatContext string, questions, answers []string) (string, bool) {
+func improveWithLocalOllama(ctx context.Context, prompt, chatContext string, questions, answers []string) (llm.Assessment, error) {
 	client, err := llm.New(llm.Ollama, "")
 	if err != nil {
-		return "", false
+		return llm.Assessment{}, err
 	}
 	assessment, err := client.ImproveWithContext(ctx, prompt, chatContext, questions, answers)
 	if err != nil || !cli.ValidRewrite(prompt, assessment.ImprovedPrompt) {
-		return "", false
+		if err == nil {
+			err = fmt.Errorf("üretilen prompt kalite kontrolünden geçmedi")
+		}
+		return llm.Assessment{}, err
 	}
-	improved := score.Evaluate(assessment.ImprovedPrompt)
-	original := score.Evaluate(prompt)
-	if improved.Score < original.Score {
-		return "", false
-	}
-	return assessment.ImprovedPrompt, true
+	return assessment, nil
 }
 
 func improvementFromAPI(response api.ImproveResponse) editorImprovement {
 	return editorImprovement{
 		Prompt: response.ImprovedPrompt, Source: sourceLabel(response.Source),
-		Original: resultFromAPI(response.OriginalScore, response.Original),
-		Improved: resultFromAPI(response.ImprovedScore, response.Improved),
+		Original:      resultFromAPI(response.OriginalScore, response.Original),
+		Improved:      resultFromAPI(response.ImprovedScore, response.Improved),
+		QualityStatus: response.QualityStatus, QualityMessage: response.QualityMessage,
 	}
 }
 
 func showableImprovement(improvement editorImprovement) bool {
-	return improvement.Improved.Score >= improvement.Original.Score && strings.TrimSpace(improvement.Prompt) != ""
+	return improvement.QualityStatus != "failed" && strings.TrimSpace(improvement.Prompt) != ""
 }
 
 func sourceLabel(source string) string {
@@ -222,12 +225,12 @@ func rewriteFailed(err error) error {
 	return nil
 }
 
-func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result, contextSource string) bool {
+func chooseComparison(original string, originalScore score.Result, improved string, improvedScore score.Result, contextSource, qualityStatus string) bool {
 	selected := 0
 	return raw(func() bool {
 		for {
 			clear()
-			printComparisonHeader(originalScore, improvedScore, contextSource)
+			printComparisonHeader(originalScore, improvedScore, contextSource, qualityStatus)
 			budget := promptLineBudget()
 			printPrompt("Özgün prompt  ·  "+scoreBadge(originalScore.Score), original, budget)
 			screenln()
@@ -395,11 +398,15 @@ func promptPreview(value string, columns, limit int) []string {
 	return append(lines[:limit-1], fmt.Sprintf("… (%d satır daha)", remaining))
 }
 
-func printComparisonHeader(original, improved score.Result, contextSource string) {
+func printComparisonHeader(original, improved score.Result, contextSource, qualityStatus string) {
 	delta := improved.Score - original.Score
 	screenln("PromptPatch")
-	screenln("Özgün " + scoreBadge(original.Score) + "   →   İyileştirilmiş " + scoreBadge(improved.Score) + scoreDelta(delta))
-	screenln("Puan: görev, bağlam, çıktı, kısıt ve uygulanabilirliğin ortalaması")
+	screenln("Yapısal puan: özgün " + scoreBadge(original.Score) + "   →   iyileştirilmiş " + scoreBadge(improved.Score) + scoreDelta(delta))
+	if qualityStatus == "corrected" {
+		screenln("Kalite kontrolü: 1 düzeltmeyle geçti")
+	} else {
+		screenln("Kalite kontrolü: geçti")
+	}
 	if contextSource != "" {
 		screenln("Yakın sohbet bağlamı: " + contextSource)
 	}
