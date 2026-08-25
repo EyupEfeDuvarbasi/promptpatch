@@ -72,7 +72,7 @@ Codex CLI, `Ctrl-G` ile o an yazdığınız promptu editöre aktarır. Bir kez a
 promptcheck setup-codex
 ```
 
-`Ctrl-G` artık aynı terminalde PromptPatch ekranını açar. Taslak prompt otomatik gelir, ekran yatay kaydırma gerektirmeden satır kırar; eksik bilgi varsa en fazla iki karar değiştirici soru sorar. İlk kurulumda yakın sohbet bağlamı için kapalı, 800, 2.000 veya 4.000 kelimelik sınır seçilir (varsayılan 2.000). Eşleşen yerel oturum bulunursa yalnızca en yeni tam kullanıcı/yardımcı mesajları referans olarak kullanılır; bulunamazsa taslak tek başına işlenir.
+`Ctrl-G` artık aynı terminalde PromptPatch ekranını açar. Taslak prompt otomatik gelir, ekran yatay kaydırma gerektirmeden satır kırar; eksik bilgi varsa en fazla iki karar değiştirici soru sorar. İlk kurulumda yakın sohbet bağlamı için kapalı, 800, 2.000 veya 4.000 kelimelik sınır seçilir (varsayılan 2.000). Remote server seçilirse sohbet bağlamının gönderimi için ayrıca onay istenir; onay yoksa yalnız taslak prompt gönderilir.
 
 Yanıtlar önce yerel eksik-bilgi kontrolüyle toplanır; sonra yapılandırmaya göre merkezi PromptPatch server'a veya yerel modele verilir. Model gerçek iyileştirilmiş promptu üretir, iki sürüm yerel kurallarla puanlanır. Soru-cevap metnini sona ekleyen, somut gereksinimleri kaybeden veya skoru düşüren model çıktıları kabul edilmez. `↑`/`↓` ve `Enter` ile sürümü seçersiniz.
 
@@ -86,7 +86,7 @@ Windows'ta `Ctrl-G`, PowerShell kısayolu değil Codex terminal arayüzünün ke
 
 Bu launcher `VISUAL` ve `EDITOR` değişkenlerini PromptPatch editör wrapper'ına ayarlayıp gerçek `codex.exe` komutunu başlatır. `Ctrl-G` yine Codex ekranı odaktayken çalışır.
 
-Yeni bir kullanıcı cihazında Ollama kurmadan merkezi server kullanmak için `promptcheck setup-codex` sırasında server sorusuna `y` yanıtı verin ve API URL/token değerlerini girin. Etkileşimsiz kurulumlarda aynı ayar ortam değişkenleriyle de verilebilir:
+Yeni bir kullanıcı cihazında Ollama kurmadan merkezi server kullanmak için `promptcheck setup-codex` sırasında server sorusuna `y` yanıtı verip API URL'sini girin. Token yalnız ortam değişkeninden okunur:
 
 ```powershell
 $env:PROMPTPATCH_API_URL = "https://promptpatch.example.com"
@@ -133,6 +133,7 @@ export PROMPTPATCH_SERVER_TOKEN="uzun-rastgele-token"
 export PROMPTPATCH_OLLAMA_URL=http://127.0.0.1:11434/api/generate
 export PROMPTPATCH_OLLAMA_MODEL=gemma3:4b
 export PROMPTPATCH_MAX_CONCURRENCY=2
+export PROMPTPATCH_RATE_LIMIT_PER_MINUTE=10
 promptcheck serve
 ```
 
@@ -152,6 +153,7 @@ Hazır endpointler:
 - `GET /healthz`: proses ayakta mı kontrol eder.
 - `GET /readyz`: Ollama'ya ve yüklü modele erişilebiliyor mu kontrol eder.
 - `POST /v1/improve`: promptu puanlar ve iyileştirilmiş prompt döndürür.
+- `GET /metrics`: prompt veya token içermeyen Prometheus sayaçlarını döndürür.
 
 ## GitHub'dan server'a yükleme
 
@@ -217,7 +219,7 @@ Production notları:
 
 - Ollama portu `11434` internete açılmamalı.
 - Public domain için Nginx/Caddy ile yalnızca PromptPatch API'ye reverse proxy verin.
-- `PROMPTPATCH_SERVER_TOKEN` public bind için zorunludur ve uzun rastgele değer olmalıdır. Tokensız kullanım yalnızca `127.0.0.1` üzerinde mümkündür.
+- `PROMPTPATCH_SERVER_TOKEN` public bind için zorunludur ve uzun rastgele değer olmalıdır. Tokensız kullanım yalnızca `127.0.0.1` üzerinde mümkündür. İstemcide token yalnız `PROMPTPATCH_API_TOKEN` ortam değişkeninden okunur; config dosyasına yazılmaz.
 - GPU gücüne göre `PROMPTPATCH_MAX_CONCURRENCY` değerini düşük başlatın; küçük GPU/CPU için `1`, orta GPU için `2-4`.
 - Deploy sonrası `curl http://127.0.0.1:8080/readyz` ile model erişimini kontrol edin.
 
@@ -249,7 +251,7 @@ Kurulum sorularında:
 - Yakın sohbet bağlamı için varsayılan `3` seçilebilir.
 - Merkezi server sorusunda `y` seçin.
 - Server URL olarak public reverse proxy adresini girin, örnek: `https://promptpatch.example.com`.
-- Token olarak server'daki `PROMPTPATCH_SERVER_TOKEN` değerini girin.
+- `PROMPTPATCH_API_TOKEN` değerini server'daki `PROMPTPATCH_SERVER_TOKEN` ile aynı olacak şekilde ortam değişkeni olarak ayarlayın.
 
 4. Yeni PowerShell penceresi açın ve Codex'i wrapper üzerinden başlatın:
 

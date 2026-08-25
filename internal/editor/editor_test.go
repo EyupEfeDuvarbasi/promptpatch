@@ -246,8 +246,8 @@ func TestShowableImprovementRequiresScoreIncrease(t *testing.T) {
 		Original: score.Result{Score: 24},
 		Improved: score.Result{Score: 24},
 	}
-	if showableImprovement(same) {
-		t.Fatal("same-score rewrite must not be shown as an improvement")
+	if !showableImprovement(same) {
+		t.Fatal("same-score rewrite should be shown")
 	}
 	better := same
 	better.Improved.Score = 60

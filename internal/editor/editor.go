@@ -61,7 +61,7 @@ func Run(path string) error {
 	}
 	contextSource := comparisonSource(chatContext.Source, improvement.Source)
 	if !showableImprovement(improvement) {
-		return rewriteFailed(fmt.Errorf("üretilen prompt skoru artırmadı: %s -> %s", scoreBadge(improvement.Original.Score), scoreBadge(improvement.Improved.Score)))
+		return rewriteFailed(fmt.Errorf("üretilen prompt güvenilir değil: %s -> %s", scoreBadge(improvement.Original.Score), scoreBadge(improvement.Improved.Score)))
 	}
 	if !chooseComparison(prompt, improvement.Original, improvement.Prompt, improvement.Improved, contextSource) {
 		return nil
@@ -121,7 +121,7 @@ func improveWithBestAvailable(ctx context.Context, prompt, chatContext string, q
 		return editorImprovement{Prompt: improved, Source: "ollama", Original: original, Improved: improvedScore}, nil, true
 	}
 	improved := cli.LocalImproveWithContext(prompt, chatContext, questions, answers)
-	return editorImprovement{Prompt: improved, Source: "local", Original: score.Evaluate(prompt), Improved: score.Evaluate(improved)}, nil, true
+	return editorImprovement{Prompt: improved, Source: "Yerel fallback", Original: score.Evaluate(prompt), Improved: score.Evaluate(improved)}, nil, true
 }
 
 func improveWithRemoteServer(ctx context.Context, prompt, chatContext string, questions, answers []string) (api.ImproveResponse, bool) {
@@ -133,6 +133,9 @@ func improveWithRemoteServer(ctx context.Context, prompt, chatContext string, qu
 	if !ok {
 		return api.ImproveResponse{}, false
 	}
+	if !config.RemoteContextEnabled(path) {
+		chatContext = ""
+	}
 	response, err := api.Client{URL: url, Token: token}.Improve(ctx, api.ImproveRequest{
 		Prompt: prompt, Questions: questions, Answers: answers, ChatContext: chatContext,
 	})
@@ -142,10 +145,10 @@ func improveWithRemoteServer(ctx context.Context, prompt, chatContext string, qu
 	if strings.TrimSpace(response.ImprovedPrompt) == "" {
 		return response, len(response.Questions) > 0
 	}
-	if (response.ImprovedScore != 0 || response.OriginalScore != 0) && response.ImprovedScore <= response.OriginalScore {
+	if (response.ImprovedScore != 0 || response.OriginalScore != 0) && response.ImprovedScore < response.OriginalScore {
 		return api.ImproveResponse{}, false
 	}
-	if !usableRewrite(prompt, response.ImprovedPrompt) {
+	if !cli.ValidRewrite(prompt, response.ImprovedPrompt) {
 		return api.ImproveResponse{}, false
 	}
 	return response, true
@@ -157,12 +160,12 @@ func improveWithLocalOllama(ctx context.Context, prompt, chatContext string, que
 		return "", false
 	}
 	assessment, err := client.ImproveWithContext(ctx, prompt, chatContext, questions, answers)
-	if err != nil || !usableRewrite(prompt, assessment.ImprovedPrompt) {
+	if err != nil || !cli.ValidRewrite(prompt, assessment.ImprovedPrompt) {
 		return "", false
 	}
 	improved := score.Evaluate(assessment.ImprovedPrompt)
 	original := score.Evaluate(prompt)
-	if improved.Score <= original.Score {
+	if improved.Score < original.Score {
 		return "", false
 	}
 	return assessment.ImprovedPrompt, true
@@ -170,15 +173,24 @@ func improveWithLocalOllama(ctx context.Context, prompt, chatContext string, que
 
 func improvementFromAPI(response api.ImproveResponse) editorImprovement {
 	return editorImprovement{
-		Prompt: response.ImprovedPrompt, Source: "server/" + response.Source,
+		Prompt: response.ImprovedPrompt, Source: sourceLabel(response.Source),
 		Original: resultFromAPI(response.OriginalScore, response.Original),
 		Improved: resultFromAPI(response.ImprovedScore, response.Improved),
 	}
 }
 
 func showableImprovement(improvement editorImprovement) bool {
-	return strings.TrimSpace(improvement.Prompt) != "" && improvement.Improved.Score > improvement.Original.Score
+	return improvement.Improved.Score >= improvement.Original.Score && strings.TrimSpace(improvement.Prompt) != ""
 }
+
+func sourceLabel(source string) string {
+	if source == "local" {
+		return "Yerel fallback"
+	}
+	return "Server/" + source
+}
+
+func usableRewrite(original, candidate string) bool { return cli.ValidRewrite(original, candidate) }
 
 func resultFromAPI(total int, criteria []score.Criterion) score.Result {
 	if total == 0 && len(criteria) > 0 {
@@ -199,15 +211,6 @@ func comparisonSource(contextSource, rewriteSource string) string {
 		return source
 	}
 	return contextSource + " · " + source
-}
-
-func usableRewrite(original, candidate string) bool {
-	candidate = strings.ToLower(candidate)
-	return len(strings.Fields(candidate)) >= 8 && normalizePrompt(original) != normalizePrompt(candidate) && !strings.Contains(candidate, "soru:") && !strings.Contains(candidate, "cevap:")
-}
-
-func normalizePrompt(value string) string {
-	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
 }
 
 func rewriteFailed(err error) error {

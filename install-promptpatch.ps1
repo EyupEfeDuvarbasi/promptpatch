@@ -135,7 +135,11 @@ function Configure-Codex([string]$PromptcheckPath) {
 
     $newline = [Environment]::NewLine
     if ($ServerUrl) {
-        $setupInput = "1" + $newline + "y" + $newline + $ServerUrl + $newline + $ServerToken + $newline
+        # PromptPatch never writes the token to its config file. Persist it only
+        # as the user's environment variable so future PowerShell sessions inherit it.
+        [Environment]::SetEnvironmentVariable("PROMPTPATCH_API_TOKEN", $ServerToken, "User")
+        $env:PROMPTPATCH_API_TOKEN = $ServerToken
+        $setupInput = "1" + $newline + "y" + $newline + $ServerUrl + $newline
         Write-Step "Codex entegrasyonu remote server ile yapılandırılıyor."
     }
     else {

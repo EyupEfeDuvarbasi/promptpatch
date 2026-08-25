@@ -21,8 +21,8 @@ type Config struct {
 	ChatContextWords int
 	ChatContextSet   bool
 	ServerURL        string
-	ServerToken      string
 	ServerSet        bool
+	RemoteContext    bool
 }
 
 type persistedConfig struct {
@@ -31,8 +31,8 @@ type persistedConfig struct {
 	ChatContextWords int          `json:"chat_context_words"`
 	ChatContextSet   bool         `json:"chat_context_configured"`
 	ServerURL        string       `json:"server_url,omitempty"`
-	ServerToken      string       `json:"server_token,omitempty"`
 	ServerSet        bool         `json:"server_configured"`
+	RemoteContext    bool         `json:"remote_context_enabled"`
 }
 
 type keyResolver interface {
@@ -74,7 +74,7 @@ func Resolve(path string, in io.Reader, out io.Writer) (llm.Client, error) {
 	key := resolver.Key(config.Provider, config)
 	if key == "" {
 		fmt.Fprintf(out, "%s API anahtarı: ", config.Provider)
-		key, err = bufio.NewReader(in).ReadString('\n')
+		key, err = buffered(in).ReadString('\n')
 		if err != nil && len(key) == 0 {
 			return llm.Client{}, errors.New("API anahtarı gerekli")
 		}
@@ -136,7 +136,7 @@ func Load(path string) (Config, error) {
 		config := Config{
 			Provider: persisted.Provider, Model: persisted.Model,
 			ChatContextWords: persisted.ChatContextWords, ChatContextSet: persisted.ChatContextSet,
-			ServerURL: persisted.ServerURL, ServerToken: persisted.ServerToken, ServerSet: persisted.ServerSet,
+			ServerURL: persisted.ServerURL, ServerSet: persisted.ServerSet, RemoteContext: persisted.RemoteContext,
 		}
 		if config.ChatContextWords != 0 && config.ChatContextWords != 800 && config.ChatContextWords != 2000 && config.ChatContextWords != 4000 {
 			return Config{}, errors.New("geçersiz chat_context_words")
@@ -170,9 +170,11 @@ func Load(path string) (Config, error) {
 		case "server_url":
 			config.ServerURL = strings.TrimSpace(value)
 		case "server_token":
-			config.ServerToken = strings.TrimSpace(value)
+			// Legacy server tokens are intentionally ignored; use PROMPTPATCH_API_TOKEN.
 		case "server_configured":
 			config.ServerSet = strings.TrimSpace(value) == "true"
+		case "remote_context_enabled":
+			config.RemoteContext = strings.TrimSpace(value) == "true"
 		}
 	}
 	if config.Provider != "" && !isConfigurableProvider(config.Provider) {
@@ -188,7 +190,7 @@ func Save(path string, config Config) error {
 	content, err := json.MarshalIndent(persistedConfig{
 		Provider: config.Provider, Model: config.Model,
 		ChatContextWords: config.ChatContextWords, ChatContextSet: config.ChatContextSet,
-		ServerURL: config.ServerURL, ServerToken: config.ServerToken, ServerSet: config.ServerSet,
+		ServerURL: config.ServerURL, ServerSet: config.ServerSet, RemoteContext: config.RemoteContext,
 	}, "", "  ")
 	if err != nil {
 		return err
@@ -204,13 +206,22 @@ func RemoteServer(path string) (string, string, bool) {
 	url := strings.TrimSpace(os.Getenv("PROMPTPATCH_API_URL"))
 	token := strings.TrimSpace(os.Getenv("PROMPTPATCH_API_TOKEN"))
 	if url != "" {
-		return url, token, true
+		return url, token, token != ""
 	}
 	config, err := Load(path)
 	if err != nil || !config.ServerSet || strings.TrimSpace(config.ServerURL) == "" {
 		return "", "", false
 	}
-	return strings.TrimSpace(config.ServerURL), strings.TrimSpace(config.ServerToken), true
+	return strings.TrimSpace(config.ServerURL), token, token != ""
+}
+
+// RemoteContextEnabled requires a separate opt-in before conversation history leaves the device.
+func RemoteContextEnabled(path string) bool {
+	if strings.TrimSpace(os.Getenv("PROMPTPATCH_REMOTE_CONTEXT")) == "1" {
+		return true
+	}
+	config, err := Load(path)
+	return err == nil && config.RemoteContext
 }
 
 // ConfigureRemoteServer asks once during setup whether Ctrl-G should call a central PromptPatch API.
@@ -222,7 +233,7 @@ func ConfigureRemoteServer(path string, in io.Reader, out io.Writer) (Config, er
 	if config.ServerSet {
 		return config, nil
 	}
-	reader := bufio.NewReader(in)
+	reader := buffered(in)
 	fmt.Fprintln(out, "Ctrl-G iyileştirmesi merkezi PromptPatch server üzerinden mi çalışsın? (y/N)")
 	fmt.Fprint(out, "> ")
 	choice, err := reader.ReadString('\n')
@@ -244,14 +255,15 @@ func ConfigureRemoteServer(path string, in io.Reader, out io.Writer) (Config, er
 	if url == "" {
 		return Config{}, errors.New("server URL gerekli")
 	}
-	fmt.Fprint(out, "PromptPatch server token: ")
-	token, err := reader.ReadString('\n')
-	if err != nil && len(token) == 0 {
-		return Config{}, errors.New("server token gerekli")
-	}
 	config.ServerURL = url
-	config.ServerToken = strings.TrimSpace(token)
 	config.ServerSet = true
+	fmt.Fprintln(out, "Token saklanmaz. Codex'i PROMPTPATCH_API_TOKEN=<token> ile başlatın.")
+	if config.ChatContextSet && config.ChatContextWords > 0 {
+		fmt.Fprint(out, "Yakın sohbet bağlamı uzak sunucuya gönderilsin mi? (y/N)\n> ")
+		choice, _ := reader.ReadString('\n')
+		choice = strings.ToLower(strings.TrimSpace(choice))
+		config.RemoteContext = choice == "y" || choice == "yes" || choice == "e" || choice == "evet"
+	}
 	if err := Save(path, config); err != nil {
 		return Config{}, err
 	}
@@ -273,7 +285,7 @@ func ConfigureChatContext(path string, in io.Reader, out io.Writer) (Config, err
 	fmt.Fprintln(out, "3) Dengeli — son 2000 kelime (önerilen)")
 	fmt.Fprintln(out, "4) Geniş — son 4000 kelime")
 	fmt.Fprint(out, "> ")
-	choice, err := bufio.NewReader(in).ReadString('\n')
+	choice, err := buffered(in).ReadString('\n')
 	if err != nil && len(choice) == 0 {
 		return Config{}, errors.New("sohbet bağlamı seçimi gerekli")
 	}
@@ -326,7 +338,7 @@ func chooseProvider(in io.Reader, out io.Writer, keys map[llm.Provider]string) (
 		fmt.Fprintf(out, "%d) %s\n", i+1, provider)
 	}
 	fmt.Fprint(out, "> ")
-	choice, err := bufio.NewReader(in).ReadString('\n')
+	choice, err := buffered(in).ReadString('\n')
 	if err != nil && len(choice) == 0 {
 		return "", errors.New("sağlayıcı seçimi gerekli")
 	}
@@ -359,4 +371,11 @@ func configurableProviderNames() []llm.Provider {
 func isConfigurableProvider(provider llm.Provider) bool {
 	info, ok := llm.ProviderDetails(provider)
 	return ok && info.Configurable
+}
+
+func buffered(in io.Reader) *bufio.Reader {
+	if reader, ok := in.(*bufio.Reader); ok {
+		return reader
+	}
+	return bufio.NewReader(in)
 }

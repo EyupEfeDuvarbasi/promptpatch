@@ -180,7 +180,9 @@ URL server kökü olmalıdır; sonuna `/v1/improve` eklemeyin. Token,
 server'daki `PROMPTPATCH_SERVER_TOKEN` ile aynı olmalıdır.
 
 Alternatif olarak `promptcheck setup-codex` sırasında merkezi server sorusuna
-`y` yanıtlayıp URL ve token girebilirsiniz.
+`y` yanıtlayıp URL'yi girin. Token config dosyasına yazılmaz; yukarıdaki
+`PROMPTPATCH_API_TOKEN` ortam değişkeniyle verin. Sohbet bağlamı açıksa,
+uzak server'a gönderim için ayrıca onay istenir.
 
 Remote server erişilemezse istemci local Ollama'ya, o da yoksa local fallback'e
 geçer.
@@ -240,6 +242,6 @@ server bind adresinde token zorunludur.
 
 ### Özgün prompt korunuyor
 
-Model çıktısı yerel skoru artırmamış veya somut gereksinimleri kaybetmiş olabilir.
+Model çıktısı yerel skoru düşürmüş veya somut gereksinimleri kaybetmiş olabilir.
 Bu, güvenilir olmayan çıktının otomatik uygulanmasını önleyen beklenen güvenlik
 davranışıdır.

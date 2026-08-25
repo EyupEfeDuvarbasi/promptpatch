@@ -1,70 +1,78 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/cli"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
 )
 
-type sample struct {
-	prompt  string
-	context string
-}
-
-func answerFor(question string) string {
-	q := strings.ToLower(question)
-	switch {
-	case strings.Contains(q, "dosya") || strings.Contains(q, "bileşen") || strings.Contains(q, "endpoint"):
-		return "src/parser.go içindeki parseInput fonksiyonu"
-	case strings.Contains(q, "iş yükü") || strings.Contains(q, "ölçüm"):
-		return "GET /search için mevcut p95 800 ms; hedef p95 250 ms altı"
-	case strings.Contains(q, "format") || strings.Contains(q, "çıktı") || strings.Contains(q, "davranış"):
-		return "Mevcut davranışı koru, hatayı açıkça döndür ve birim test ekle"
-	case strings.Contains(q, "plan"):
-		return "Kısa Markdown planı; amaç, risk, doğrulama ve görünür çıktı bölümleri olsun"
-	default:
-		return "Kullanıcının mevcut davranışını bozma ve değişikliği testlerle doğrula"
-	}
+type corpusCase struct {
+	ID            string   `json:"id"`
+	Prompt        string   `json:"prompt"`
+	ExpectedScore [2]int   `json:"expected_score"`
+	Questions     []string `json:"questions"`
+	MustKeep      []string `json:"must_keep"`
+	MustNotInvent []string `json:"must_not_invent"`
 }
 
 func main() {
-	samples := []sample{
-		{prompt: "şunu düzelt"},
-		{prompt: "kullanıcı profili ekle"},
-		{prompt: "uygulamayı hızlandır"},
-		{prompt: "auth güvenliğini artır"},
-		{prompt: "davet API'si yap"},
-		{prompt: "buna test yaz"},
-		{prompt: "dokümantasyonu düzelt"},
-		{prompt: "paneli daha güzel yap"},
-		{prompt: "isim alanını ikiye böl"},
-		{
-			prompt:  "şunu düzelt",
-			context: "USER: src/parser.go içindeki parseInput fonksiyonu boş girdide panic ediyor. Mevcut davranışı koru ve birim test ekle.",
-		},
+	file, err := os.Open("examples/prompts/cases.jsonl")
+	if err != nil {
+		fail(err)
 	}
-
-	for i, sample := range samples {
-		original := score.Evaluate(sample.prompt)
-		questions := cli.LocalQuestionsWithContext(original, sample.prompt, sample.context)
-		answers := make([]string, len(questions))
-		for j, question := range questions {
-			answers[j] = answerFor(question)
+	defer file.Close()
+	failed, total := 0, 0
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var sample corpusCase
+		if err := json.Unmarshal(scanner.Bytes(), &sample); err != nil {
+			fail(err)
 		}
-		improved := cli.LocalImproveWithContext(sample.prompt, sample.context, questions, answers)
-		improvedResult := score.Evaluate(improved)
-
-		fmt.Printf("\n===== %d =====\n", i+1)
-		fmt.Printf("Özgün: %s\n", sample.prompt)
-		fmt.Printf("Özgün skor: %d/100\n", original.Score)
-		if sample.context != "" {
-			fmt.Printf("Bağlam: %s\n", sample.context)
+		total++
+		original := score.Evaluate(sample.Prompt)
+		improved := cli.LocalImprove(sample.Prompt, nil, nil)
+		ok := original.Score >= sample.ExpectedScore[0] && original.Score <= sample.ExpectedScore[1] && len(cli.LocalQuestions(original)) <= 2
+		for _, want := range sample.MustKeep {
+			if concrete(want) && !keepsConcreteFacts(improved, want) {
+				ok = false
+			}
 		}
-		fmt.Printf("Sorular: %v\n", questions)
-		fmt.Printf("Cevaplar: %v\n", answers)
-		fmt.Printf("İyileştirilmiş skor: %d/100\n", improvedResult.Score)
-		fmt.Printf("İyileştirilmiş:\n%s\n", improved)
+		for _, forbidden := range sample.MustNotInvent {
+			if !contains(sample.Prompt, forbidden) && contains(improved, forbidden) {
+				ok = false
+			}
+		}
+		if ok {
+			fmt.Printf("PASS %s\n", sample.ID)
+		} else {
+			failed++
+			fmt.Printf("FAIL %s score=%d questions=%d\n", sample.ID, original.Score, len(cli.LocalQuestions(original)))
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fail(err)
+	}
+	fmt.Printf("%d/%d passed\n", total-failed, total)
+	if failed != 0 {
+		os.Exit(1)
 	}
 }
+
+func concrete(value string) bool { return strings.ContainsAny(value, "0123456789`./") }
+func contains(value, part string) bool {
+	return strings.Contains(strings.ToLower(value), strings.ToLower(part))
+}
+func keepsConcreteFacts(value, phrase string) bool {
+	for _, word := range strings.Fields(phrase) {
+		if concrete(word) && !contains(value, strings.Trim(word, ",.;:")) {
+			return false
+		}
+	}
+	return true
+}
+func fail(err error) { fmt.Fprintln(os.Stderr, "prompttest:", err); os.Exit(1) }

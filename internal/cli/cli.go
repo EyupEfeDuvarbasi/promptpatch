@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/llm"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/score"
@@ -47,7 +48,8 @@ Doğrudan promptcheck "<prompt>" kullanımı kaldırıldı. Prompt geliştirme a
 Codex içinde Ctrl-G ile çalışır.
 
 Server modu için temel değişkenler: PROMPTPATCH_SERVER_ADDR, PROMPTPATCH_SERVER_TOKEN,
-PROMPTPATCH_OLLAMA_URL, PROMPTPATCH_OLLAMA_MODEL, PROMPTPATCH_MAX_CONCURRENCY.
+PROMPTPATCH_OLLAMA_URL, PROMPTPATCH_OLLAMA_MODEL, PROMPTPATCH_MAX_CONCURRENCY,
+PROMPTPATCH_RATE_LIMIT_PER_MINUTE.
 `
 }
 
@@ -63,10 +65,10 @@ func LocalQuestionsWithContext(result score.Result, prompt, chatContext string) 
 	if result.NeedsContext && !contextHasTaskContext(contextText) {
 		questions = append(questions, contextQuestion(result.Kind))
 	}
-	if result.NeedsFormat && !contextHasExpectedOutput(contextText) {
+	if result.NeedsFormat && !(result.Kind == score.BugFix && len(questions) > 0) && !contextHasExpectedOutput(contextText) {
 		questions = append(questions, outputQuestion(result.Kind))
 	}
-	if result.NeedsClarifying && !contextHasTaskContext(contextText) {
+	if result.NeedsClarifying && (len(questions) == 0 || result.Kind != score.BugFix) && !contextHasTaskContext(contextText) {
 		questions = append(questions, "Tam olarak neyin değişmesini istiyorsunuz?")
 	}
 	if len(questions) > 2 {
@@ -157,6 +159,45 @@ func LocalImproveWithContext(prompt, chatContext string, questions, answers []st
 		sections = append(sections, "\n## Kabul kriterleri\n"+criteria)
 	}
 	return strings.TrimSpace(strings.Join(sections, "\n"))
+}
+
+// ValidRewrite is the shared acceptance gate for every backend.
+func ValidRewrite(original, candidate string) bool {
+	candidate = strings.TrimSpace(candidate)
+	if len(strings.Fields(candidate)) < 8 || normalizeText(original) == normalizeText(candidate) {
+		return false
+	}
+	lower := normalizeText(candidate)
+	if strings.Contains(lower, "soru:") || strings.Contains(lower, "cevap:") {
+		return false
+	}
+	for _, fact := range concreteFacts(original) {
+		if !strings.Contains(lower, normalizeText(fact)) {
+			return false
+		}
+	}
+	return true
+}
+
+func concreteFacts(value string) []string {
+	seen, facts := map[string]bool{}, []string{}
+	for _, word := range strings.Fields(value) {
+		word = strings.Trim(word, "`'\".,;:()[]{}")
+		hasDigit := strings.IndexFunc(word, unicode.IsDigit) >= 0
+		if word == "" || (!hasDigit && !strings.Contains(word, ".") && !strings.Contains(word, "/")) {
+			continue
+		}
+		key := normalizeText(word)
+		if !seen[key] {
+			seen[key] = true
+			facts = append(facts, word)
+		}
+	}
+	return facts
+}
+
+func normalizeText(value string) string {
+	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
 }
 
 func lastUserContext(value string) string {

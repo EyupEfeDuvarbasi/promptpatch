@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "setup-codex" {
+		input := bufio.NewReader(os.Stdin)
 		if err := editor.SetupCodex(); err != nil {
 			fail(err)
 		}
@@ -21,10 +23,10 @@ func main() {
 		if err != nil {
 			fail(err)
 		}
-		if _, err := config.ConfigureChatContext(path, os.Stdin, os.Stdout); err != nil {
+		if _, err := config.ConfigureChatContext(path, input, os.Stdout); err != nil {
 			fail(err)
 		}
-		if _, err := config.ConfigureRemoteServer(path, os.Stdin, os.Stdout); err != nil {
+		if _, err := config.ConfigureRemoteServer(path, input, os.Stdout); err != nil {
 			fail(err)
 		}
 		return

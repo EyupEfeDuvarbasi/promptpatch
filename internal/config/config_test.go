@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"io"
 	"os"
 	"path/filepath"
@@ -68,11 +69,12 @@ func TestConfigureChatContextAgainReopensChoice(t *testing.T) {
 
 func TestConfigureRemoteServerSavesEndpoint(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	config, err := ConfigureRemoteServer(path, strings.NewReader("y\nhttps://promptpatch.example.com\nsecret\n"), io.Discard)
+	t.Setenv("PROMPTPATCH_API_TOKEN", "secret")
+	config, err := ConfigureRemoteServer(path, strings.NewReader("y\nhttps://promptpatch.example.com\n"), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.ServerURL != "https://promptpatch.example.com" || config.ServerToken != "secret" || !config.ServerSet {
+	if config.ServerURL != "https://promptpatch.example.com" || !config.ServerSet {
 		t.Fatalf("config=%#v", config)
 	}
 	url, token, ok := RemoteServer(path)
@@ -101,5 +103,59 @@ func TestRemoteServerUsesEnvironmentFirst(t *testing.T) {
 	url, token, ok := RemoteServer(filepath.Join(t.TempDir(), "missing.yaml"))
 	if !ok || url != "https://env.example.com" || token != "env-token" {
 		t.Fatalf("remote url=%q token=%q ok=%t", url, token, ok)
+	}
+}
+
+func TestRemoteServerRequiresEnvironmentToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := Save(path, Config{ServerURL: "https://server.example.com", ServerSet: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := RemoteServer(path); ok {
+		t.Fatal("remote server should require an environment token")
+	}
+	t.Setenv("PROMPTPATCH_API_TOKEN", "token")
+	if url, token, ok := RemoteServer(path); !ok || url != "https://server.example.com" || token != "token" {
+		t.Fatalf("url=%q token=%q ok=%t", url, token, ok)
+	}
+}
+
+func TestLoadDropsLegacyServerToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("server_url: https://server.example.com\nserver_token: secret\nserver_configured: true\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := Load(path)
+	if err != nil || config.ServerURL == "" {
+		t.Fatalf("config=%#v err=%v", config, err)
+	}
+	if _, _, ok := RemoteServer(path); ok {
+		t.Fatal("legacy token must not be used")
+	}
+}
+
+func TestRemoteContextNeedsSeparateOptIn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := Save(path, Config{RemoteContext: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !RemoteContextEnabled(path) {
+		t.Fatal("saved opt-in should enable remote context")
+	}
+	t.Setenv("PROMPTPATCH_REMOTE_CONTEXT", "")
+	if !RemoteContextEnabled(path) {
+		t.Fatal("empty environment must not disable saved opt-in")
+	}
+}
+
+func TestSetupReadersCanSharePipedInput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	input := bufio.NewReader(strings.NewReader("1\ny\nhttps://server.example.com\n"))
+	if _, err := ConfigureChatContext(path, input, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	config, err := ConfigureRemoteServer(path, input, io.Discard)
+	if err != nil || config.ServerURL != "https://server.example.com" {
+		t.Fatalf("config=%#v err=%v", config, err)
 	}
 }

@@ -37,7 +37,7 @@ func TestImproveFallsBackToLocalRewriteWhenOllamaFails(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Source != "local" || got.Warning == "" || got.OriginalScore == 0 || got.ImprovedScore == 0 || !strings.Contains(got.ImprovedPrompt, "şunu düzelt") {
+	if got.Source != "local" || got.OriginalScore == 0 || got.ImprovedScore == 0 || !strings.Contains(got.ImprovedPrompt, "şunu düzelt") {
 		t.Fatalf("response=%#v", got)
 	}
 }
@@ -75,7 +75,7 @@ func TestImproveFallsBackWhenOllamaLowersScore(t *testing.T) {
 	}))
 	defer ollama.Close()
 	server := New(Config{OllamaURL: ollama.URL + "/api/generate", OllamaModel: "test-model", Timeout: time.Second})
-	body := bytes.NewBufferString(`{"prompt":"README dosyasına GitHubdan kurulumu, systemd servisini, Ollama portunun internete açılmaması gerektiğini ve /readyz kontrolünü Türkçe ekle."}`)
+	body := bytes.NewBufferString(`{"prompt":"README dosyasına GitHubdan kurulumu, systemd servisini, Ollama portunun internete açılmaması gerektiğini ve /readyz kontrolünü Türkçe ekle.","questions":["Hedef depo bu README mi?"],"answers":["Evet."]}`)
 	request := httptest.NewRequest(http.MethodPost, "/v1/improve", body)
 	response := httptest.NewRecorder()
 
@@ -88,18 +88,18 @@ func TestImproveFallsBackWhenOllamaLowersScore(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Source != "local" || !strings.Contains(got.Warning, "skoru artırmadı") {
+	if got.Source != "local" {
 		t.Fatalf("response=%#v", got)
 	}
 }
 
 func TestImproveFallsBackWhenOllamaKeepsSameScore(t *testing.T) {
 	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":40,"improved_score":40,"original_criteria":[{"Name":"Kapsam","Score":40}],"improved_criteria":[{"Name":"Kapsam","Score":40}],"questions":[],"improved_prompt":"README dosyasına kurulum adımlarını ekle."}`) + `}`))
+		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":40,"improved_score":40,"original_criteria":[{"Name":"Kapsam","Score":40}],"improved_criteria":[{"Name":"Kapsam","Score":40}],"questions":[],"improved_prompt":"İçerik kapsamı: README dosyasına GitHubdan kurulumu, systemd servisini, Ollama portunun internete açılmaması gerektiğini ve /readyz kontrolünü Türkçe ekle. Değişikliklerin doğruluğunu doğrula."}`) + `}`))
 	}))
 	defer ollama.Close()
 	server := New(Config{OllamaURL: ollama.URL + "/api/generate", OllamaModel: "test-model", Timeout: time.Second})
-	body := bytes.NewBufferString(`{"prompt":"README dosyasına GitHubdan kurulumu, systemd servisini, Ollama portunun internete açılmaması gerektiğini ve /readyz kontrolünü Türkçe ekle."}`)
+	body := bytes.NewBufferString(`{"prompt":"README dosyasına GitHubdan kurulumu, systemd servisini, Ollama portunun internete açılmaması gerektiğini ve /readyz kontrolünü Türkçe ekle.","questions":["Hedef depo bu README mi?"]}`)
 	request := httptest.NewRequest(http.MethodPost, "/v1/improve", body)
 	response := httptest.NewRecorder()
 
@@ -112,14 +112,14 @@ func TestImproveFallsBackWhenOllamaKeepsSameScore(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Source != "local" || !strings.Contains(got.Warning, "skoru artırmadı") {
+	if got.Source != "ollama" {
 		t.Fatalf("response=%#v", got)
 	}
 }
 
-func TestImproveReturnsDynamicQuestions(t *testing.T) {
+func TestImproveReturnsLocalQuestionsBeforeOllama(t *testing.T) {
 	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"response":` + strconv.Quote(`{"original_score":20,"improved_score":0,"original_criteria":[{"Name":"Eksik hedef","Score":20}],"improved_criteria":[],"questions":["Hangi dosya veya bileşen değişecek?","Beklenen çıktı nedir?"],"improved_prompt":""}`) + `}`))
+		t.Fatal("Ollama eksik prompt için çağrılmamalı")
 	}))
 	defer ollama.Close()
 	server := New(Config{OllamaURL: ollama.URL + "/api/generate", OllamaModel: "test-model", Timeout: time.Second})
@@ -135,7 +135,7 @@ func TestImproveReturnsDynamicQuestions(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Source != "ollama" || len(got.Questions) != 2 || got.ImprovedPrompt != "" {
+	if got.Source != "local" || len(got.Questions) == 0 || got.ImprovedPrompt != "" {
 		t.Fatalf("response=%#v", got)
 	}
 }
@@ -158,7 +158,7 @@ func TestImproveFallsBackWhenModelAsksAgainAfterAnswers(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Source != "local" || !strings.Contains(got.Warning, "ek soru") {
+	if got.Source != "local" {
 		t.Fatalf("response=%#v", got)
 	}
 }
@@ -178,18 +178,19 @@ func TestLeaksClarifyingQuestion(t *testing.T) {
 
 func TestFromEnvParsesProductionSettings(t *testing.T) {
 	values := map[string]string{
-		"PROMPTPATCH_SERVER_ADDR":     "0.0.0.0:9090",
-		"PROMPTPATCH_SERVER_TOKEN":    "secret",
-		"PROMPTPATCH_OLLAMA_URL":      "http://ollama:11434/api/generate",
-		"PROMPTPATCH_OLLAMA_MODEL":    "gemma3:4b",
-		"PROMPTPATCH_TIMEOUT":         "45s",
-		"PROMPTPATCH_MAX_CONCURRENCY": "4",
+		"PROMPTPATCH_SERVER_ADDR":           "0.0.0.0:9090",
+		"PROMPTPATCH_SERVER_TOKEN":          "secret",
+		"PROMPTPATCH_OLLAMA_URL":            "http://ollama:11434/api/generate",
+		"PROMPTPATCH_OLLAMA_MODEL":          "gemma3:4b",
+		"PROMPTPATCH_TIMEOUT":               "45s",
+		"PROMPTPATCH_MAX_CONCURRENCY":       "4",
+		"PROMPTPATCH_RATE_LIMIT_PER_MINUTE": "7",
 	}
 	config, err := FromEnv(func(key string) string { return values[key] })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Addr != "0.0.0.0:9090" || config.Token != "secret" || config.Timeout != 45*time.Second || config.MaxConcurrency != 4 {
+	if config.Addr != "0.0.0.0:9090" || config.Token != "secret" || config.Timeout != 45*time.Second || config.MaxConcurrency != 4 || config.RateLimit != 7 {
 		t.Fatalf("config=%#v", config)
 	}
 }
@@ -198,5 +199,32 @@ func TestFromEnvRejectsPublicServerWithoutToken(t *testing.T) {
 	values := map[string]string{"PROMPTPATCH_SERVER_ADDR": "0.0.0.0:8080"}
 	if _, err := FromEnv(func(key string) string { return values[key] }); err == nil {
 		t.Fatal("expected public server without token to be rejected")
+	}
+}
+
+func TestImproveRejectsUnknownAndMultipleJSON(t *testing.T) {
+	server := New(Config{})
+	for _, body := range []string{`{"prompt":"şunu düzelt","extra":true}`, `{"prompt":"şunu düzelt"}{"prompt":"ikinci"}`} {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/improve", strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d", body, response.Code)
+		}
+	}
+}
+
+func TestRateLimitAndMetrics(t *testing.T) {
+	server := New(Config{RateLimit: 1, OllamaURL: "http://127.0.0.1:1/api/generate", Timeout: time.Millisecond})
+	first := httptest.NewRecorder()
+	server.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/v1/improve", strings.NewReader(`{"prompt":"şunu düzelt"}`)))
+	second := httptest.NewRecorder()
+	server.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/v1/improve", strings.NewReader(`{"prompt":"şunu düzelt"}`)))
+	if second.Code != http.StatusTooManyRequests || second.Header().Get("Retry-After") == "" {
+		t.Fatalf("status=%d headers=%v", second.Code, second.Header())
+	}
+	metrics := httptest.NewRecorder()
+	server.ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if metrics.Code != http.StatusOK || !strings.Contains(metrics.Body.String(), "promptpatch_requests_total") || strings.Contains(metrics.Body.String(), "şunu düzelt") {
+		t.Fatalf("metrics=%s", metrics.Body.String())
 	}
 }

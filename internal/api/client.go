@@ -35,7 +35,6 @@ type ImproveResponse struct {
 	Questions      []string          `json:"questions,omitempty"`
 	ImprovedPrompt string            `json:"improved_prompt"`
 	Source         string            `json:"source"`
-	Warning        string            `json:"warning,omitempty"`
 }
 
 func (c Client) Improve(ctx context.Context, request ImproveRequest) (ImproveResponse, error) {
