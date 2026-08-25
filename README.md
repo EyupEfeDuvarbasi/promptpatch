@@ -182,7 +182,23 @@ go build -o promptcheck ./cmd/promptcheck
 sudo install -m 0755 promptcheck /usr/local/bin/promptcheck
 ```
 
-Systemd servisi oluşturma:
+Önce yalnız root'un okuyabildiği sunucu ayar dosyasını oluşturun. Token için
+yer tutucu kullanmayın; `openssl rand -hex 32` ile üretilmiş gerçek değeri yazın.
+
+```sh
+sudo install -d -m 0700 /etc/promptpatch
+sudo tee /etc/promptpatch/promptpatch.env >/dev/null <<'EOF'
+PROMPTPATCH_SERVER_ADDR=127.0.0.1:8080
+PROMPTPATCH_SERVER_TOKEN=uzun-rastgele-token
+PROMPTPATCH_OLLAMA_URL=http://127.0.0.1:11434/api/generate
+PROMPTPATCH_OLLAMA_MODEL=gemma3:4b
+PROMPTPATCH_MAX_CONCURRENCY=2
+PROMPTPATCH_RATE_LIMIT_PER_MINUTE=10
+EOF
+sudo chmod 600 /etc/promptpatch/promptpatch.env
+```
+
+Ardından systemd servisini oluşturun:
 
 ```sh
 sudo tee /etc/systemd/system/promptpatch.service >/dev/null <<'EOF'
@@ -193,11 +209,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-Environment=PROMPTPATCH_SERVER_ADDR=127.0.0.1:8080
-Environment=PROMPTPATCH_SERVER_TOKEN=uzun-rastgele-token
-Environment=PROMPTPATCH_OLLAMA_URL=http://127.0.0.1:11434/api/generate
-Environment=PROMPTPATCH_OLLAMA_MODEL=gemma3:4b
-Environment=PROMPTPATCH_MAX_CONCURRENCY=2
+EnvironmentFile=/etc/promptpatch/promptpatch.env
 ExecStart=/usr/local/bin/promptcheck serve
 Restart=always
 RestartSec=3
