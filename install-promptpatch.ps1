@@ -1,8 +1,5 @@
 [CmdletBinding()]
 param(
-    [string]$ServerUrl = "",
-    [string]$ServerToken = "",
-    [switch]$InstallOllama,
     [switch]$SkipCodexCheck
 )
 
@@ -95,57 +92,10 @@ function Install-PromptPatch([string]$GoPath) {
     throw "PromptPatch kuruldu ancak promptcheck.exe bulunamadı: $candidate"
 }
 
-function Install-OllamaIfRequested {
-    if (-not $InstallOllama) {
-        return
-    }
-
-    $ollama = Find-CommandPath "ollama"
-    if (-not $ollama) {
-        $winget = Find-CommandPath "winget"
-        if (-not $winget) {
-            throw "Ollama kurulamadı; winget bulunamadı."
-        }
-
-        Write-Step "Ollama kuruluyor."
-        & $winget install --id Ollama.Ollama --exact --source winget --accept-package-agreements --accept-source-agreements
-        if ($LASTEXITCODE -ne 0) {
-            throw "Ollama kurulumu başarısız oldu."
-        }
-
-        Refresh-UserPath
-        $ollama = Find-CommandPath "ollama"
-    }
-
-    if (-not $ollama) {
-        throw "Ollama kuruldu ancak mevcut PATH'e yüklenmedi. Yeni PowerShell açıp ollama pull qwen2.5:7b çalıştırın."
-    }
-
-    Write-Step "qwen2.5:7b modeli kontrol ediliyor."
-    & $ollama pull qwen2.5:7b
-    if ($LASTEXITCODE -ne 0) {
-        throw "qwen2.5:7b modeli indirilemedi."
-    }
-}
-
 function Configure-Codex([string]$PromptcheckPath) {
-    if (($ServerUrl -and -not $ServerToken) -or ($ServerToken -and -not $ServerUrl)) {
-        throw "-ServerUrl ve -ServerToken birlikte verilmelidir."
-    }
-
     $newline = [Environment]::NewLine
-    if ($ServerUrl) {
-        # PromptPatch never writes the token to its config file. Persist it only
-        # as the user's environment variable so future PowerShell sessions inherit it.
-        [Environment]::SetEnvironmentVariable("PROMPTPATCH_API_TOKEN", $ServerToken, "User")
-        $env:PROMPTPATCH_API_TOKEN = $ServerToken
-        $setupInput = "1" + $newline + "y" + $newline + $ServerUrl + $newline
-        Write-Step "Codex entegrasyonu remote server ile yapılandırılıyor."
-    }
-    else {
-        $setupInput = "1" + $newline + "N" + $newline
-        Write-Step "Codex entegrasyonu yerel Ollama ile yapılandırılıyor."
-    }
+    $setupInput = "1" + $newline
+    Write-Step "Codex entegrasyonu yapılandırılıyor."
 
     $setupInput | & $PromptcheckPath setup-codex
     if ($LASTEXITCODE -ne 0) {
@@ -164,7 +114,6 @@ try {
         throw "promptcheck --help çalışmadı."
     }
 
-    Install-OllamaIfRequested
     Configure-Codex $promptcheck
 
     Write-Host ""
@@ -174,9 +123,6 @@ try {
     Write-Host "  codex" -ForegroundColor White
     Write-Host ""
     Write-Host "Codex içinde prompt yazıp Ctrl-G tuşlarına basın." -ForegroundColor Yellow
-    if (-not $ServerUrl -and -not $InstallOllama) {
-        Write-Host "Local fallback etkin. Daha iyi model çıktısı için -InstallOllama ile yeniden çalıştırabilirsiniz." -ForegroundColor DarkYellow
-    }
 }
 catch {
     Write-Failure $_.Exception.Message

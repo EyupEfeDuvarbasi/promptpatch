@@ -36,21 +36,16 @@ func HelpText() string {
 Kullanım:
   promptcheck setup-codex
   promptcheck configure-context
-  promptcheck serve
   promptcheck edit <dosya>
 
 Komutlar:
   setup-codex   Codex EDITOR/VISUAL entegrasyonunu kurar ve yakın bağlam ayarını sorar.
   configure-context  Yakın sohbet bağlamı ayarını yeniden seçtirir.
-  serve         HTTP API sunucusunu başlatır; server tarafındaki private Ollama'yı kullanır.
-  edit <dosya>  EDITOR/VISUAL akışından çağrılır; dosyadaki taslak promptu iyileştirir.
+  edit <dosya>  EDITOR/VISUAL akışından çağrılır; mevcut Codex oturumuyla taslağı iyileştirir.
 
 Doğrudan promptcheck "<prompt>" kullanımı kaldırıldı. Prompt geliştirme akışı
-Codex içinde Ctrl-G ile çalışır.
-
-Server modu için temel değişkenler: PROMPTPATCH_SERVER_ADDR, PROMPTPATCH_SERVER_TOKEN,
-PROMPTPATCH_OLLAMA_URL, PROMPTPATCH_OLLAMA_MODEL, PROMPTPATCH_MAX_CONCURRENCY,
-PROMPTPATCH_RATE_LIMIT_PER_MINUTE.
+Codex içinde Ctrl-G ile çalışır. Model ve düşünme düzeyi isteğe bağlı olarak
+PROMPTPATCH_CODEX_MODEL ve PROMPTPATCH_CODEX_REASONING ile değiştirilebilir.
 `
 }
 

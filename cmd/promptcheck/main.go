@@ -9,8 +9,6 @@ import (
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/cli"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/config"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/editor"
-	"github.com/EyupEfeDuvarbasi/promptpatch/internal/llm"
-	"github.com/EyupEfeDuvarbasi/promptpatch/internal/server"
 )
 
 func main() {
@@ -24,9 +22,6 @@ func main() {
 			fail(err)
 		}
 		if _, err := config.ConfigureChatContext(path, input, os.Stdout); err != nil {
-			fail(err)
-		}
-		if _, err := config.ConfigureRemoteServer(path, input, os.Stdout); err != nil {
 			fail(err)
 		}
 		return
@@ -47,42 +42,9 @@ func main() {
 		}
 		return
 	}
-	if len(os.Args) >= 2 && os.Args[1] == "serve" {
-		config, err := server.FromEnv(os.Getenv)
-		if err != nil {
-			fail(err)
-		}
-		fmt.Fprintln(os.Stderr, "promptcheck: serving on "+config.Addr)
-		if err := server.New(config).ListenAndServe(); err != nil {
-			fail(err)
-		}
-		return
-	}
-
-	var client *llm.Client
-	if usesLLM(os.Args[1:]) {
-		path, err := config.DefaultPath()
-		if err != nil {
-			fail(err)
-		}
-		resolved, err := config.Resolve(path, os.Stdin, os.Stdout)
-		if err != nil {
-			fail(err)
-		}
-		client = &resolved
-	}
-	if err := cli.Run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, client); err != nil {
+	if err := cli.Run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, nil); err != nil {
 		fail(err)
 	}
-}
-
-func usesLLM(args []string) bool {
-	for _, arg := range args {
-		if arg == "--model" || len(arg) > len("--model=") && arg[:len("--model=")] == "--model=" {
-			return true
-		}
-	}
-	return false
 }
 
 func fail(err error) {

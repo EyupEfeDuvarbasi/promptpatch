@@ -325,10 +325,10 @@ func (c Client) ollamaRewriteAttempt(ctx context.Context, input, feedback string
 	if strings.TrimSpace(rewritten.UnderstoodTask) == "" {
 		issues = append(issues, "model görevi yorumlamadı")
 	}
-	return cleanOllamaRewrite(rewritten.ImprovedPrompt), issues, nil
+	return cleanModelRewrite(rewritten.ImprovedPrompt), issues, nil
 }
 
-func cleanOllamaRewrite(response string) string {
+func cleanModelRewrite(response string) string {
 	response = strings.TrimSpace(response)
 	for _, prefix := range []string{
 		"Here is the rewritten prompt:",

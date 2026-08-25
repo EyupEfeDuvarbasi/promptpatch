@@ -11,7 +11,6 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/EyupEfeDuvarbasi/promptpatch/internal/api"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/chat"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/cli"
 	"github.com/EyupEfeDuvarbasi/promptpatch/internal/config"
@@ -107,78 +106,21 @@ func improveWithMascot(ctx context.Context, prompt, chatContext string, question
 }
 
 func improveWithBestAvailable(ctx context.Context, prompt, chatContext string, questions, answers []string) (editorImprovement, []string, bool) {
-	// Ask deterministic, decision-changing questions before invoking a backend.
-	// This keeps the UX consistent when no remote server is configured.
+	// Ask deterministic, decision-changing questions before spending Codex usage.
 	if len(questions) == 0 && len(answers) == 0 {
 		if nextQuestions := cli.LocalQuestionsWithContext(score.Evaluate(prompt), prompt, chatContext); len(nextQuestions) > 0 {
 			return editorImprovement{}, nextQuestions, true
 		}
 	}
-	if response, ok := improveWithRemoteServer(ctx, prompt, chatContext, questions, answers); ok {
-		if len(response.Questions) > 0 && strings.TrimSpace(response.ImprovedPrompt) == "" {
-			return editorImprovement{}, response.Questions, true
-		} else if strings.TrimSpace(response.ImprovedPrompt) != "" || response.QualityStatus == "failed" {
-			return improvementFromAPI(response), nil, true
-		}
-	}
-	if assessment, err := improveWithLocalOllama(ctx, prompt, chatContext, questions, answers); err == nil {
+	model := strings.TrimSpace(getenv("PROMPTPATCH_CODEX_MODEL"))
+	reasoning := strings.TrimSpace(getenv("PROMPTPATCH_CODEX_REASONING"))
+	if assessment, _, err := llm.ImproveWithCodex(ctx, prompt, chatContext, questions, answers, model, reasoning); err == nil {
 		improved := assessment.ImprovedPrompt
 		original := score.Evaluate(prompt)
 		improvedScore := score.Evaluate(improved)
-		return editorImprovement{Prompt: improved, Source: "ollama", Original: original, Improved: improvedScore, QualityStatus: assessment.QualityStatus}, nil, true
+		return editorImprovement{Prompt: improved, Source: "Codex", Original: original, Improved: improvedScore, QualityStatus: assessment.QualityStatus}, nil, true
 	} else {
-		return editorImprovement{Source: "ollama", Original: score.Evaluate(prompt), QualityStatus: "failed", QualityMessage: err.Error()}, nil, true
-	}
-}
-
-func improveWithRemoteServer(ctx context.Context, prompt, chatContext string, questions, answers []string) (api.ImproveResponse, bool) {
-	path, err := config.DefaultPath()
-	if err != nil {
-		return api.ImproveResponse{}, false
-	}
-	url, token, ok := config.RemoteServer(path)
-	if !ok {
-		return api.ImproveResponse{}, false
-	}
-	if !config.RemoteContextEnabled(path) {
-		chatContext = ""
-	}
-	response, err := api.Client{URL: url, Token: token}.Improve(ctx, api.ImproveRequest{
-		Prompt: prompt, Questions: questions, Answers: answers, ChatContext: chatContext,
-	})
-	if err != nil {
-		return api.ImproveResponse{}, false
-	}
-	if strings.TrimSpace(response.ImprovedPrompt) == "" {
-		return response, len(response.Questions) > 0 || response.QualityStatus == "failed"
-	}
-	if !cli.ValidRewrite(prompt, response.ImprovedPrompt) {
-		return api.ImproveResponse{}, false
-	}
-	return response, true
-}
-
-func improveWithLocalOllama(ctx context.Context, prompt, chatContext string, questions, answers []string) (llm.Assessment, error) {
-	client, err := llm.New(llm.Ollama, "")
-	if err != nil {
-		return llm.Assessment{}, err
-	}
-	assessment, err := client.ImproveWithContext(ctx, prompt, chatContext, questions, answers)
-	if err != nil || !cli.ValidRewrite(prompt, assessment.ImprovedPrompt) {
-		if err == nil {
-			err = fmt.Errorf("üretilen prompt kalite kontrolünden geçmedi")
-		}
-		return llm.Assessment{}, err
-	}
-	return assessment, nil
-}
-
-func improvementFromAPI(response api.ImproveResponse) editorImprovement {
-	return editorImprovement{
-		Prompt: response.ImprovedPrompt, Source: sourceLabel(response.Source),
-		Original:      resultFromAPI(response.OriginalScore, response.Original),
-		Improved:      resultFromAPI(response.ImprovedScore, response.Improved),
-		QualityStatus: response.QualityStatus, QualityMessage: response.QualityMessage,
+		return editorImprovement{Source: "Codex", Original: score.Evaluate(prompt), QualityStatus: "failed", QualityMessage: err.Error()}, nil, true
 	}
 }
 
@@ -186,24 +128,7 @@ func showableImprovement(improvement editorImprovement) bool {
 	return improvement.QualityStatus != "failed" && strings.TrimSpace(improvement.Prompt) != ""
 }
 
-func sourceLabel(source string) string {
-	if source == "local" {
-		return "Yerel fallback"
-	}
-	return "Server/" + source
-}
-
 func usableRewrite(original, candidate string) bool { return cli.ValidRewrite(original, candidate) }
-
-func resultFromAPI(total int, criteria []score.Criterion) score.Result {
-	if total == 0 && len(criteria) > 0 {
-		for _, criterion := range criteria {
-			total += criterion.Score
-		}
-		total /= len(criteria)
-	}
-	return score.Result{Score: total, Criteria: criteria}
-}
 
 func comparisonSource(contextSource, rewriteSource string) string {
 	if rewriteSource == "" {

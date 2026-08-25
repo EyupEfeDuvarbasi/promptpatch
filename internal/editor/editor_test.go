@@ -2,8 +2,6 @@ package editor
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"runtime"
@@ -195,50 +193,6 @@ func TestUsableRewriteAllowsStructuredPrompt(t *testing.T) {
 	candidate := "## Görev\nsrc/parser.go içindeki parseInput fonksiyonunda boş girdi hatasını düzelt.\n\n## Başarı ölçütleri\nBoş girdi hata döndürmeli."
 	if !usableRewrite("şunu düzelt", candidate) {
 		t.Fatal("structured prompt should be usable")
-	}
-}
-
-func TestImproveWithRemoteServerUsesConfiguredAPI(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-token" {
-			t.Fatalf("authorization=%q", r.Header.Get("Authorization"))
-		}
-		_, _ = w.Write([]byte(`{"original_score":30,"improved_score":80,"improved_prompt":"src/parser.go dosyasındaki boş girdi hatasını düzelt ve JSON hata açıklaması döndür.","source":"ollama"}`))
-	}))
-	defer server.Close()
-	t.Setenv("PROMPTPATCH_API_URL", server.URL)
-	t.Setenv("PROMPTPATCH_API_TOKEN", "test-token")
-
-	response, ok := improveWithRemoteServer(context.Background(), "şunu düzelt", "", nil, nil)
-
-	if !ok || !strings.Contains(response.ImprovedPrompt, "src/parser.go") {
-		t.Fatalf("response=%#v ok=%t", response, ok)
-	}
-}
-
-func TestImproveWithRemoteServerAcceptsQualityRewriteDespiteLowerStructuralScore(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"original_score":80,"improved_score":30,"improved_prompt":"src/parser.go dosyasındaki boş girdi hatasını düzelt ve JSON hata açıklaması döndür.","source":"ollama"}`))
-	}))
-	defer server.Close()
-	t.Setenv("PROMPTPATCH_API_URL", server.URL)
-	t.Setenv("PROMPTPATCH_API_TOKEN", "test-token")
-
-	if response, ok := improveWithRemoteServer(context.Background(), "şunu düzelt", "", nil, nil); !ok || response.ImprovedPrompt == "" {
-		t.Fatalf("quality rewrite should not be rejected by structural score: %#v", response)
-	}
-}
-
-func TestImproveWithRemoteServerAcceptsSameStructuralScore(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"original_score":24,"improved_score":24,"improved_prompt":"src/parser.go dosyasındaki boş girdi hatasını düzelt ve JSON hata açıklaması döndür.","source":"local"}`))
-	}))
-	defer server.Close()
-	t.Setenv("PROMPTPATCH_API_URL", server.URL)
-	t.Setenv("PROMPTPATCH_API_TOKEN", "test-token")
-
-	if response, ok := improveWithRemoteServer(context.Background(), "şunu düzelt", "", nil, nil); !ok || response.ImprovedPrompt == "" {
-		t.Fatalf("same-score quality rewrite should be accepted: %#v", response)
 	}
 }
 
