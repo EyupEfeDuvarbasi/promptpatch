@@ -49,7 +49,7 @@ function Ensure-Codex {
 function Install-PromptPatch {
     Write-Step "Prompter release paketi kuruluyor."
     $release = $Version
-    if ($release -eq "latest") { $release = (Invoke-RestMethod "https://api.github.com/repos/EyupEfeDuvarbasi/promptpatch/releases/latest").tag_name }
+    if ($release -eq "latest") { $release = (Invoke-RestMethod "https://api.github.com/repos/EyupEfeDuvarbasi/promptpatch/releases?per_page=1")[0].tag_name }
     $name = "promptcheck_${release}_windows_amd64"
     $temp = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
     New-Item -ItemType Directory -Path $temp | Out-Null

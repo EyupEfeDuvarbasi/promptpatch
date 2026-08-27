@@ -7,7 +7,7 @@ os=$(uname -s | tr '[:upper:]' '[:lower:]')
 arch=$(uname -m)
 case "$arch" in x86_64) arch=amd64;; aarch64|arm64) arch=arm64;; *) echo "Desteklenmeyen mimari: $arch" >&2; exit 1;; esac
 case "$os" in linux|darwin) :;; *) echo "Windows için install-promptpatch.ps1 kullanın." >&2; exit 1;; esac
-if [ "$version" = latest ]; then version=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1); fi
+if [ "$version" = latest ]; then version=$(curl -fsSL "https://api.github.com/repos/$repo/releases?per_page=1" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1); fi
 name="promptcheck_${version}_${os}_${arch}"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "https://github.com/$repo/releases/download/$version/$name.tar.gz" -o "$tmp/archive.tar.gz"
