@@ -10,11 +10,17 @@ Gereksinim: çalışan ve giriş yapılmış bir Codex CLI.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/EyupEfeDuvarbasi/promptpatch/main/install.sh | sh
-prompter setup-codex
 ```
 
-Yeni bir terminal açıp `codex` komutunu çalıştırın. Prompt yazarken `Ctrl-G`
+Kurulum Codex entegrasyonunu ve yerel yardımcı servisi başlatır, ardından giriş
+ekranını tarayıcıda açar. Yeni bir terminalde `codex` komutunu çalıştırın. Prompt yazarken `Ctrl-G`
 tuşuna basın; karşılaştırma ekranında özgün veya iyileştirilmiş sürümü seçin.
+
+Canlı arayüz yayına alındığında yardımcı uygulama adresi şu değişkenle verilir:
+
+```sh
+PROMPTER_WEB_URL=https://prompter.dev/setup prompter start
+```
 
 Yakın sohbet bağlamı ayarını sonradan değiştirmek için:
 
@@ -67,8 +73,6 @@ Release binary kurulumu (Linux/macOS):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/EyupEfeDuvarbasi/promptpatch/main/install.sh | sh
-prompter setup-codex
-prompter serve
 ```
 
 Teşhis ve yerel veri yaşam döngüsü:

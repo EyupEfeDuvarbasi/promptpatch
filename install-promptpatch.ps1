@@ -92,12 +92,12 @@ try {
     }
 
     Configure-Codex $promptcheck
+	Start-Process $promptcheck -ArgumentList "start" -WindowStyle Hidden
 
     Write-Host ""
     Write-Host "Kurulum tamamlandı." -ForegroundColor Green
     Write-Host ""
-    Write-Host "Yeni bir PowerShell penceresi açın, sonra:" -ForegroundColor Yellow
-    Write-Host "  codex" -ForegroundColor White
+    Write-Host "Prompter giriş ekranı tarayıcıda açılacak." -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Codex içinde prompt yazıp Ctrl-G tuşlarına basın." -ForegroundColor Yellow
 }

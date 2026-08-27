@@ -21,4 +21,5 @@ case ":$PATH:" in *":$HOME/.local/bin:"*) :;; *)
   grep -q 'Prompter PATH' "$rc" 2>/dev/null || printf '\n# Prompter PATH\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
 esac
 echo "Kuruldu: $HOME/.local/bin/prompter"
-echo "Sonraki adım: prompter setup-codex && prompter serve"
+nohup "$HOME/.local/bin/prompter" start >"${TMPDIR:-/tmp}/prompter.log" 2>&1 </dev/null &
+echo "Prompter başlatıldı; giriş ekranı tarayıcıda açılacak."

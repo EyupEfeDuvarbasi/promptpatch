@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -179,6 +181,45 @@ func containsArg(args []string, want string) bool {
 	return false
 }
 func commandExists(name string) bool { _, err := exec.LookPath(name); return err == nil }
+
+func openPrompterWhenReady(addr, webURL string) {
+	localURL := "http://" + addr
+	for range 30 {
+		response, err := http.Get(localURL + "/healthz")
+		if err == nil {
+			response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	webURL = prompterURL(localURL, webURL)
+	var command *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		command = exec.Command("open", webURL)
+	case "windows":
+		command = exec.Command("cmd", "/c", "start", "", webURL)
+	default:
+		command = exec.Command("xdg-open", webURL)
+	}
+	_ = command.Start()
+}
+
+func prompterURL(localURL, webURL string) string {
+	if webURL == "" {
+		return localURL
+	}
+	parsed, err := url.ParseRequestURI(webURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return localURL
+	}
+	query := parsed.Query()
+	query.Set("connector", localURL)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
 func folderPickerCommand() string {
 	switch runtime.GOOS {
 	case "darwin":
