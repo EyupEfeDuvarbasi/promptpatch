@@ -11,7 +11,11 @@ import (
 func TestDataResetOnlyRemovesPrompterFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	dir := filepath.Join(home, ".local", "share", "prompter")
+	t.Setenv("LOCALAPPDATA", home)
+	dir, err := localDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -34,6 +38,7 @@ func TestDataResetOnlyRemovesPrompterFiles(t *testing.T) {
 func TestSupportBundleContainsNoUserData(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
 	old, _ := os.Getwd()
 	t.Chdir(t.TempDir())
 	defer os.Chdir(old)

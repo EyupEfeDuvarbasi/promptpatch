@@ -9,7 +9,9 @@ import (
 )
 
 func TestWorkspaceDoesNotExposeAbsolutePath(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
 	r := httptest.NewRecorder()
 	New(Config{}).ServeHTTP(r, httptest.NewRequest(http.MethodGet, "/v1/workspace", nil))
 	if r.Code != http.StatusOK || strings.Contains(r.Body.String(), `"/home/`) || strings.Contains(r.Body.String(), `"assistant"`) {
@@ -25,7 +27,9 @@ func TestProjectWithoutHistoryReturnsEmptyPromptArray(t *testing.T) {
 }
 
 func TestRemoveProjectOnlyRemovesMapping(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
 	projectDir := t.TempDir()
 	project, err := saveProject(projectDir)
 	if err != nil {
