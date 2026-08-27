@@ -45,6 +45,20 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "start" {
+		if err := editor.SetupCodex(); err != nil {
+			fail(err)
+		}
+		config, err := server.FromEnv(os.Getenv)
+		if err != nil {
+			fail(err)
+		}
+		go openPrompterWhenReady(config.Addr, os.Getenv("PROMPTER_WEB_URL"))
+		if err := server.New(config).ListenAndServe(); err != nil {
+			fail(err)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "setup-codex" {
 		input := bufio.NewReader(os.Stdin)
 		if err := editor.SetupCodex(); err != nil {

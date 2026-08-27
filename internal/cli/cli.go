@@ -35,6 +35,7 @@ func HelpText() string {
 
 Kullanım:
   prompter setup-codex
+  prompter start
   prompter configure-context
   prompter edit <dosya>
   prompter serve
@@ -46,6 +47,7 @@ Kullanım:
 
 Komutlar:
   setup-codex   Codex EDITOR/VISUAL entegrasyonunu kurar ve yakın bağlam ayarını sorar.
+  start         Yerel yardımcı servisi başlatır ve Prompter'ı tarayıcıda açar.
   configure-context  Yakın sohbet bağlamı ayarını yeniden seçtirir.
   edit <dosya>  EDITOR/VISUAL akışından çağrılır; mevcut Codex oturumuyla taslağı iyileştirir.
   serve         Yerel Prompter web arayüzünü başlatır.

@@ -50,3 +50,13 @@ func TestSupportBundleContainsNoUserData(t *testing.T) {
 		t.Fatalf("bundles=%v", matches)
 	}
 }
+
+func TestPrompterURLAddsLocalConnector(t *testing.T) {
+	got := prompterURL("http://127.0.0.1:8787", "https://prompter.dev/setup?lang=tr")
+	if got != "https://prompter.dev/setup?connector=http%3A%2F%2F127.0.0.1%3A8787&lang=tr" {
+		t.Fatalf("url=%s", got)
+	}
+	if got := prompterURL("http://127.0.0.1:8787", "javascript:alert(1)"); got != "http://127.0.0.1:8787" {
+		t.Fatalf("unsafe fallback=%s", got)
+	}
+}
