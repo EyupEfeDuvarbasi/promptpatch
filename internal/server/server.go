@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +24,7 @@ import (
 )
 
 const (
-	defaultAddr           = "127.0.0.1:8080"
+	defaultAddr           = "127.0.0.1:8787"
 	defaultTimeout        = 60 * time.Second
 	defaultMaxConcurrency = 2
 	defaultRateLimit      = 10
@@ -35,15 +38,22 @@ type Config struct {
 	Timeout        time.Duration
 	MaxConcurrency int
 	RateLimit      int
+	PublicURL      string
+	SessionSecret  string
+	GoogleID       string
+	GoogleSecret   string
+	GitHubID       string
+	GitHubSecret   string
 }
 
 type Server struct {
-	config Config
-	mux    *http.ServeMux
-	limit  chan struct{}
-	client *http.Client
-	rate   *rateLimiter
-	stats  *metrics
+	config     Config
+	mux        *http.ServeMux
+	limit      chan struct{}
+	client     *http.Client
+	rate       *rateLimiter
+	stats      *metrics
+	sessionKey []byte
 }
 
 type ImproveRequest struct {
@@ -122,16 +132,37 @@ func (m *metrics) record(status int, source string, fallback bool, elapsed time.
 
 func New(config Config) *Server {
 	config = normalizeConfig(config)
+	key := []byte(config.SessionSecret)
+	if len(key) == 0 {
+		key = localSessionKey()
+	}
 	server := &Server{
-		config: config,
-		mux:    http.NewServeMux(),
-		limit:  make(chan struct{}, config.MaxConcurrency),
-		client: &http.Client{Timeout: config.Timeout + 5*time.Second},
-		rate:   newRateLimiter(config.RateLimit),
-		stats:  newMetrics(),
+		config:     config,
+		mux:        http.NewServeMux(),
+		limit:      make(chan struct{}, config.MaxConcurrency),
+		client:     &http.Client{Timeout: config.Timeout + 5*time.Second},
+		rate:       newRateLimiter(config.RateLimit),
+		stats:      newMetrics(),
+		sessionKey: key,
 	}
 	server.routes()
 	return server
+}
+
+func localSessionKey() []byte {
+	if store, err := projectStorePath(); err == nil {
+		path := strings.TrimSuffix(store, "projects.json") + "session.key"
+		if key, err := os.ReadFile(path); err == nil && len(key) == 32 {
+			return key
+		}
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err == nil && os.MkdirAll(filepath.Dir(path), 0700) == nil && os.WriteFile(path, key, 0600) == nil {
+			return key
+		}
+	}
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	return key
 }
 
 func FromEnv(getenv func(string) string) (Config, error) {
@@ -140,6 +171,9 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		Token:       getenv("PROMPTPATCH_SERVER_TOKEN"),
 		OllamaURL:   getenv("PROMPTPATCH_OLLAMA_URL"),
 		OllamaModel: getenv("PROMPTPATCH_OLLAMA_MODEL"),
+		PublicURL:   getenv("PROMPTER_PUBLIC_URL"), SessionSecret: getenv("PROMPTER_SESSION_SECRET"),
+		GoogleID: getenv("GOOGLE_CLIENT_ID"), GoogleSecret: getenv("GOOGLE_CLIENT_SECRET"),
+		GitHubID: getenv("GITHUB_CLIENT_ID"), GitHubSecret: getenv("GITHUB_CLIENT_SECRET"),
 	}
 	if timeout := strings.TrimSpace(getenv("PROMPTPATCH_TIMEOUT")); timeout != "" {
 		parsed, err := time.ParseDuration(timeout)
@@ -166,6 +200,9 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	if config.Token == "" && !isLoopbackAddr(config.Addr) {
 		return Config{}, errors.New("PROMPTPATCH_SERVER_TOKEN public bind için zorunlu")
 	}
+	if !isLoopbackAddr(config.Addr) && (config.GoogleID != "" || config.GitHubID != "") && (!strings.HasPrefix(config.PublicURL, "https://") || len(config.SessionSecret) < 32) {
+		return Config{}, errors.New("OAuth için HTTPS PROMPTER_PUBLIC_URL ve en az 32 karakter PROMPTER_SESSION_SECRET zorunlu")
+	}
 	return config, nil
 }
 
@@ -186,9 +223,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) routes() {
+	s.webRoutes()
 	s.mux.HandleFunc("GET /healthz", s.health)
 	s.mux.HandleFunc("GET /readyz", s.ready)
 	s.mux.HandleFunc("GET /metrics", s.prometheus)
+	s.mux.HandleFunc("GET /v1/workspace", s.requireLogin(s.workspace))
+	s.mux.HandleFunc("POST /v1/projects", s.sameOrigin(s.requireLogin(s.addProject)))
+	s.mux.HandleFunc("POST /v1/projects/pick", s.sameOrigin(s.requireLogin(s.pickProject)))
+	s.mux.HandleFunc("DELETE /v1/projects/{id}", s.sameOrigin(s.requireLogin(s.removeProject)))
+	s.mux.HandleFunc("GET /v1/setup", s.setupStatus)
+	s.authRoutes()
 	s.mux.HandleFunc("POST /v1/improve", s.auth(s.improve))
 }
 
@@ -362,6 +406,9 @@ func isLoopbackAddr(address string) bool {
 func normalizeConfig(config Config) Config {
 	if strings.TrimSpace(config.Addr) == "" {
 		config.Addr = defaultAddr
+	}
+	if strings.TrimSpace(config.PublicURL) == "" {
+		config.PublicURL = "http://" + config.Addr
 	}
 	if strings.TrimSpace(config.OllamaURL) == "" {
 		config.OllamaURL = "http://127.0.0.1:11434/api/generate"

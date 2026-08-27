@@ -1,0 +1,19 @@
+name: Alpha hata raporu
+description: Yerel Prompter alpha sürümündeki bir hatayı bildirin
+body:
+  - type: textarea
+    attributes: {label: Tekrar adımları}
+    validations: {required: true}
+  - type: textarea
+    attributes: {label: Beklenen davranış}
+    validations: {required: true}
+  - type: textarea
+    attributes: {label: Gerçek davranış}
+    validations: {required: true}
+  - type: input
+    attributes: {label: İşletim sistemi ve Prompter sürümü}
+    validations: {required: true}
+  - type: textarea
+    attributes: {label: prompter doctor çıktısı, açıklanmasında sakınca yoksa}
+  - type: markdown
+    attributes: {value: "Prompt, e-posta, token, cookie veya mutlak dosya yolu paylaşmayın."}

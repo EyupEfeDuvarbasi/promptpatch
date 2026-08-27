@@ -168,6 +168,13 @@ func TestSetupCodexWritesWindowsProfileAndWrapper(t *testing.T) {
 	}
 }
 
+func TestRemoveCodexBlock(t *testing.T) {
+	input := "before\n" + codexMarker + "\nwrapper\n" + codexEndMarker + "\nafter\n"
+	if got := removeCodexBlock(input); got != "before\nafter\n" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestScreenLinesUseCarriageReturn(t *testing.T) {
 	if got := screenText("a\nb"); got != "a\r\nb" {
 		t.Fatalf("line ending=%q", got)

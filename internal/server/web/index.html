@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Prompter</title>
+  <link rel="stylesheet" href="/assets/styles.css?v=9">
+</head>
+<body>
+  <a class="skip" href="#content">İçeriğe geç</a>
+  <div id="app"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <dialog id="project-dialog"><form method="dialog"><div class="card-head"><h2>Yeni proje bağla</h2><button class="btn" value="cancel" aria-label="Kapat">×</button></div><p class="sub">Sunucunun okuyabildiği klasörün tam yolunu girin. Dosya içerikleri web arayüzüne aktarılmaz.</p><label for="project-path">Klasör yolu</label><input id="project-path" class="field" placeholder="/home/kullanici/projeler/uygulama" required><div class="actions"><button class="btn" value="cancel">Vazgeç</button><button class="btn primary" id="connect-project" value="default">Projeyi bağla</button></div></form></dialog>
+  <dialog id="detail-dialog"><form method="dialog"><div class="card-head"><h2 id="detail-title">Ayrıntı</h2><button class="btn" value="cancel" aria-label="Kapat">×</button></div><div id="detail-content"></div><div class="actions"><button class="btn primary" value="cancel">Kapat</button></div></form></dialog>
+  <script src="/assets/app.js?v=9" defer></script>
+</body>
+</html>

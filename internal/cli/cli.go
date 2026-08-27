@@ -31,19 +31,28 @@ func wantsHelp(args []string) bool {
 }
 
 func HelpText() string {
-	return `promptcheck - AI kodlama promptlarını puanla ve iyileştir
+	return `prompter - AI kodlama promptlarını puanla ve iyileştir
 
 Kullanım:
-  promptcheck setup-codex
-  promptcheck configure-context
-  promptcheck edit <dosya>
+  prompter setup-codex
+  prompter configure-context
+  prompter edit <dosya>
+  prompter serve
+  prompter version
+  prompter data status|reset [--auth|--all]
+  prompter doctor
+  prompter support-bundle
+  prompter uninstall [--delete-data]
 
 Komutlar:
   setup-codex   Codex EDITOR/VISUAL entegrasyonunu kurar ve yakın bağlam ayarını sorar.
   configure-context  Yakın sohbet bağlamı ayarını yeniden seçtirir.
   edit <dosya>  EDITOR/VISUAL akışından çağrılır; mevcut Codex oturumuyla taslağı iyileştirir.
+  serve         Yerel Prompter web arayüzünü başlatır.
+  data          Yerel Prompter verisini gösterir veya güvenli biçimde sıfırlar.
+  doctor        Kurulum ve çalışma ortamını içerik toplamadan denetler.
 
-Doğrudan promptcheck "<prompt>" kullanımı kaldırıldı. Prompt geliştirme akışı
+Doğrudan prompter "<prompt>" kullanımı kaldırıldı. Prompt geliştirme akışı
 Codex içinde Ctrl-G ile çalışır. Model ve düşünme düzeyi isteğe bağlı olarak
 PROMPTPATCH_CODEX_MODEL ve PROMPTPATCH_CODEX_REASONING ile değiştirilebilir.
 `

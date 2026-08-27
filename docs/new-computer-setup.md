@@ -3,7 +3,6 @@
 ## Ön koşullar
 
 - Codex CLI kurulu, giriş yapılmış ve `codex` komutu PATH içinde olmalı.
-- Kaynaktan kurulum için Go kurulu olmalı.
 
 PromptPatch mevcut Codex girişini kullanır; Ollama, ayrı API anahtarı veya
 PromptPatch sunucusu gerekmez.
@@ -11,9 +10,9 @@ PromptPatch sunucusu gerekmez.
 ## Linux ve macOS
 
 ```sh
-go install github.com/EyupEfeDuvarbasi/promptpatch/cmd/promptcheck@main
-promptcheck --help
-promptcheck setup-codex
+curl -fsSL https://raw.githubusercontent.com/EyupEfeDuvarbasi/promptpatch/main/install.sh | sh
+prompter --help
+prompter setup-codex
 ```
 
 Kurulum `~/.zshrc` veya `~/.bashrc` içine Codex wrapper'ını ekler. Yeni terminal
@@ -31,9 +30,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 Elle kurulum:
 
 ```powershell
-winget install GoLang.Go
-go install github.com/EyupEfeDuvarbasi/promptpatch/cmd/promptcheck@main
-promptcheck setup-codex
+prompter setup-codex
 ```
 
 Yeni PowerShell açın ve `codex` komutunu çalıştırın. Profil wrapper'ı yüklenmezse:
@@ -46,7 +43,7 @@ Yeni PowerShell açın ve `codex` komutunu çalıştırın. Profil wrapper'ı y�
 
 ```sh
 codex login status
-promptcheck --help
+prompter --help
 ```
 
 Codex içinde bir prompt yazıp `Ctrl-G` tuşuna basın. PromptPatch önce yalnızca
@@ -56,7 +53,7 @@ Karşılaştırma ekranında seçim yapılana kadar dosyadaki özgün prompt de�
 Yakın sohbet bağlamını yeniden ayarlamak için:
 
 ```sh
-promptcheck configure-context
+prompter configure-context
 ```
 
 Model çağrısı hata verirse özgün prompt korunur. Varsayılan 60 saniyelik editör

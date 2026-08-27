@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,6 +34,17 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      - name: Web smoke test
+        shell: bash
+        run: |
+          suffix="${{ runner.os == 'Windows' && '.exe' || '' }}"
+          go build -o "promptcheck$suffix" ./cmd/promptcheck
+          ./promptcheck$suffix version
+          PROMPTPATCH_SERVER_ADDR=127.0.0.1:18787 ./promptcheck$suffix serve >server.log 2>&1 & pid=$!
+          for i in 1 2 3 4 5; do curl -fsS http://127.0.0.1:18787/healthz && break || sleep 1; done
+          curl -fsS http://127.0.0.1:18787/healthz
+          kill $pid
 
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})

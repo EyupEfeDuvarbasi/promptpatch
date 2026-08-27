@@ -36,6 +36,22 @@ func setupCodex() error {
 	}
 	return os.WriteFile(rc, []byte(updated), 0600)
 }
+func uninstallCodex() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	for _, name := range []string{".zshrc", ".bashrc"} {
+		path := filepath.Join(home, name)
+		data, e := os.ReadFile(path)
+		if e == nil {
+			if e = os.WriteFile(path, []byte(removeCodexBlock(string(data))), 0600); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
 
 func codexBlock(editorPath string) string {
 	editor := shellQuote(editorPath)

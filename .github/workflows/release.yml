@@ -32,7 +32,8 @@ jobs:
           mkdir -p dist/$name
           suffix=""
           if [ "${{ matrix.goos }}" = windows ]; then suffix=.exe; fi
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/$name/promptcheck$suffix ./cmd/promptcheck
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -trimpath -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o dist/$name/prompter$suffix ./cmd/promptcheck
+          cp README.md dist/$name/
           if [ "${{ matrix.ext }}" = zip ]; then (cd dist && zip -r $name.zip $name); else tar -C dist -czf dist/$name.tar.gz $name; fi
           sha256sum dist/*.${{ matrix.ext }} > dist/$name.${{ matrix.ext }}.sha256
       - uses: actions/upload-artifact@v4

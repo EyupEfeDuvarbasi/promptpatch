@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$SkipCodexCheck
+    [switch]$SkipCodexCheck,
+    [string]$Version = "latest"
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,31 +30,6 @@ function Find-CommandPath([string]$Name) {
     return $null
 }
 
-function Ensure-Go {
-    $go = Find-CommandPath "go"
-    if ($go) {
-        return $go
-    }
-
-    Write-Step "Go bulunamadı; winget ile Go kuruluyor."
-    $winget = Find-CommandPath "winget"
-    if (-not $winget) {
-        throw "Go ve winget bulunamadı. Go'yu https://go.dev/dl/ adresinden kurup scripti yeniden çalıştırın."
-    }
-
-    & $winget install --id GoLang.Go --exact --source winget --accept-package-agreements --accept-source-agreements
-    if ($LASTEXITCODE -ne 0) {
-        throw "Go kurulumu başarısız oldu. winget çıkış kodu: $LASTEXITCODE"
-    }
-
-    Refresh-UserPath
-    $go = Find-CommandPath "go"
-    if (-not $go) {
-        throw "Go kuruldu ancak yeni PATH mevcut PowerShell'e yüklenmedi. Yeni PowerShell açıp scripti yeniden çalıştırın."
-    }
-    return $go
-}
-
 function Ensure-Codex {
     if ($SkipCodexCheck) {
         return
@@ -70,26 +46,28 @@ function Ensure-Codex {
     }
 }
 
-function Install-PromptPatch([string]$GoPath) {
-    Write-Step "PromptPatch kuruluyor."
-    & $GoPath install github.com/EyupEfeDuvarbasi/promptpatch/cmd/promptcheck@main
-    if ($LASTEXITCODE -ne 0) {
-        throw "PromptPatch kurulumu başarısız oldu."
-    }
-
-    Refresh-UserPath
-    $gopath = (& $GoPath env GOPATH).Trim()
-    $candidate = Join-Path $gopath "bin\promptcheck.exe"
-    if (Test-Path -LiteralPath $candidate) {
-        return $candidate
-    }
-
-    $promptcheck = Find-CommandPath "promptcheck"
-    if ($promptcheck) {
-        return $promptcheck
-    }
-
-    throw "PromptPatch kuruldu ancak promptcheck.exe bulunamadı: $candidate"
+function Install-PromptPatch {
+    Write-Step "Prompter release paketi kuruluyor."
+    $release = $Version
+    if ($release -eq "latest") { $release = (Invoke-RestMethod "https://api.github.com/repos/EyupEfeDuvarbasi/promptpatch/releases/latest").tag_name }
+    $name = "promptcheck_${release}_windows_amd64"
+    $temp = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
+    New-Item -ItemType Directory -Path $temp | Out-Null
+    try {
+        $archive = Join-Path $temp "$name.zip"
+        Invoke-WebRequest "https://github.com/EyupEfeDuvarbasi/promptpatch/releases/download/$release/$name.zip" -OutFile $archive
+        $checksum = (Invoke-WebRequest "https://github.com/EyupEfeDuvarbasi/promptpatch/releases/download/$release/$name.zip.sha256").Content.Split(' ')[0].Trim()
+        if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $checksum.ToLowerInvariant()) { throw "Release checksum doğrulanamadı." }
+        Expand-Archive $archive -DestinationPath $temp
+        $bin = Join-Path $env:LOCALAPPDATA "Prompter\bin"
+        New-Item -ItemType Directory -Force -Path $bin | Out-Null
+        $target = Join-Path $bin "prompter.exe"
+        Copy-Item (Join-Path $temp "$name\prompter.exe") $target -Force
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if (($userPath -split ';') -notcontains $bin) { [Environment]::SetEnvironmentVariable("Path", (($userPath.TrimEnd(';') + ';' + $bin).Trim(';')), "User") }
+        Refresh-UserPath
+        return $target
+    } finally { Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 function Configure-Codex([string]$PromptcheckPath) {
@@ -105,10 +83,9 @@ function Configure-Codex([string]$PromptcheckPath) {
 
 try {
     Write-Step "Ön koşullar kontrol ediliyor."
-    $go = Ensure-Go
     Ensure-Codex
 
-    $promptcheck = Install-PromptPatch $go
+    $promptcheck = Install-PromptPatch
     & $promptcheck --help | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "promptcheck --help çalışmadı."

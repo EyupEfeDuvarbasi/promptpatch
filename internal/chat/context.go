@@ -20,6 +20,40 @@ type Result struct {
 	Source string
 }
 
+// UserPrompts returns only user-authored messages from the newest matching
+// local session. Assistant responses and tool output are never included.
+func UserPrompts(cwd, host string, limit int) []string {
+	if limit < 1 {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	for _, source := range sources(host) {
+		for _, path := range recentFiles(map[string]string{
+			"codex": filepath.Join(home, ".codex", "sessions"), "gemini": filepath.Join(home, ".gemini", "tmp"),
+			"claude": filepath.Join(home, ".claude", "projects"), "copilot": filepath.Join(home, ".copilot"),
+		}[source], source) {
+			messages, matched := readMessages(path, cwd, source)
+			if !matched {
+				continue
+			}
+			var prompts []string
+			for _, message := range messages {
+				if message.Role == "user" && strings.TrimSpace(message.Text) != "" {
+					prompts = append(prompts, message.Text)
+				}
+			}
+			if len(prompts) > limit {
+				prompts = prompts[len(prompts)-limit:]
+			}
+			return prompts
+		}
+	}
+	return nil
+}
+
 // Load returns recent whole user/assistant messages. It never sends or stores chat content.
 func Load(cwd, host string, words int) Result {
 	if words <= 0 {

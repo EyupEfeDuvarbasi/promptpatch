@@ -55,6 +55,21 @@ func setupCodex() error {
 	}
 	return nil
 }
+func uninstallCodex() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	for _, path := range powerShellProfilePaths(home) {
+		data, e := os.ReadFile(path)
+		if e == nil {
+			if e = os.WriteFile(path, []byte(removeCodexBlock(string(data))), 0600); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
 
 func powerShellProfilePaths(home string) []string {
 	return []string{

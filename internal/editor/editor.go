@@ -415,6 +415,7 @@ func wrap(value string, columns int) []string {
 func SetupCodex() error {
 	return setupCodex()
 }
+func UninstallCodex() error { return uninstallCodex() }
 
 const (
 	codexMarker    = "# promptcheck Codex editor"
@@ -444,4 +445,20 @@ func replaceCodexBlock(contents, block string) string {
 	}
 	end += endLine + 1
 	return contents[:start] + block + contents[end:]
+}
+
+func removeCodexBlock(contents string) string {
+	start := strings.Index(contents, codexMarker)
+	if start < 0 {
+		return contents
+	}
+	end := strings.Index(contents[start:], codexEndMarker)
+	if end < 0 {
+		return contents[:start]
+	}
+	end += start + len(codexEndMarker)
+	if end < len(contents) && contents[end] == '\n' {
+		end++
+	}
+	return contents[:start] + contents[end:]
 }
